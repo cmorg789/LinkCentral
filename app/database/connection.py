@@ -1,4 +1,5 @@
 """Database connection management."""
+from contextlib import contextmanager
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from typing import Generator
@@ -40,6 +41,16 @@ def init_db() -> None:
 
 def get_db() -> Generator[Session, None, None]:
     """Get database session as dependency."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@contextmanager
+def get_session() -> Generator[Session, None, None]:
+    """Get database session as context manager (for non-FastAPI code)."""
     db = SessionLocal()
     try:
         yield db

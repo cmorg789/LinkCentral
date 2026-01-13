@@ -12,7 +12,7 @@ from spyne.server.wsgi import WsgiApplication
 from sqlalchemy.orm import Session
 
 from app import __version__
-from app.database.connection import SessionLocal
+from app.database.connection import get_session
 from app.database.models import Workflow, RequestLog
 from app.soap.types import OptionObject2015, ErrorCodes, TNS
 
@@ -42,85 +42,84 @@ class ScriptLinkService(Service):
             Modified OptionObject2015
         """
         start_time = time.time()
-        db: Session = SessionLocal()
+        workflow = None
+        input_json = None
 
-        try:
-            # Capture input JSON BEFORE execution (engine modifies option_object in-place)
-            input_json = _option_object_to_json(optionObject)
+        with get_session() as db:
+            try:
+                # Capture input JSON BEFORE execution (engine modifies option_object in-place)
+                input_json = _option_object_to_json(optionObject)
 
-            # Look up workflow by parameter
-            workflow = db.query(Workflow).filter(
-                Workflow.parameter == parameter,
-                Workflow.is_active == True
-            ).first()
+                # Look up workflow by parameter
+                workflow = db.query(Workflow).filter(
+                    Workflow.parameter == parameter,
+                    Workflow.is_active == True
+                ).first()
 
-            if workflow is None:
-                # No workflow found - always log and return error
+                if workflow is None:
+                    # No workflow found - always log and return error
+                    execution_time_ms = int((time.time() - start_time) * 1000)
+
+                    # Log the unconfigured request
+                    log_entry = RequestLog(
+                        parameter=parameter,
+                        workflow_id=None,
+                        option_object=input_json,
+                        response_object=None,
+                        status="no_workflow",
+                        error_message=f"Script not configured: {parameter}",
+                        execution_time_ms=execution_time_ms,
+                    )
+                    db.add(log_entry)
+                    db.commit()
+
+                    # Return error response
+                    optionObject.ErrorCode = ErrorCodes.ALERT
+                    optionObject.ErrorMesg = f"Script not configured: {parameter}"
+                    return _build_minimal_response(optionObject)
+
+                # Workflow found - execute it
+                from app.workflow.engine import WorkflowEngine
+
+                engine = WorkflowEngine(workflow, db)
+                result = engine.execute(optionObject)
+
                 execution_time_ms = int((time.time() - start_time) * 1000)
 
-                # Log the unconfigured request
+                # Log based on workflow's logging config
+                _log_request(
+                    db=db,
+                    workflow=workflow,
+                    option_object_json=input_json,
+                    response_object=result,
+                    execution_context=engine.get_context_json(),
+                    status="success" if result.ErrorCode == ErrorCodes.NONE else "error",
+                    error_message=result.ErrorMesg if result.ErrorCode != ErrorCodes.NONE else None,
+                    execution_time_ms=execution_time_ms,
+                )
+
+                return result
+
+            except Exception as e:
+                execution_time_ms = int((time.time() - start_time) * 1000)
+
+                # Log the error
                 log_entry = RequestLog(
                     parameter=parameter,
-                    workflow_id=None,
+                    workflow_id=workflow.id if workflow else None,
                     option_object=input_json,
                     response_object=None,
-                    status="no_workflow",
-                    error_message=f"Script not configured: {parameter}",
+                    status="error",
+                    error_message=str(e),
                     execution_time_ms=execution_time_ms,
                 )
                 db.add(log_entry)
                 db.commit()
 
                 # Return error response
-                optionObject.ErrorCode = ErrorCodes.ALERT
-                optionObject.ErrorMesg = f"Script not configured: {parameter}"
+                optionObject.ErrorCode = ErrorCodes.ERROR
+                optionObject.ErrorMesg = f"Workflow error: {str(e)}"
                 return _build_minimal_response(optionObject)
-
-            # Workflow found - execute it
-            from app.workflow.engine import WorkflowEngine
-
-            engine = WorkflowEngine(workflow, db)
-            result = engine.execute(optionObject)
-
-            execution_time_ms = int((time.time() - start_time) * 1000)
-
-            # Log based on workflow's logging config
-            _log_request(
-                db=db,
-                workflow=workflow,
-                option_object_json=input_json,
-                response_object=result,
-                execution_context=engine.get_context_json(),
-                status="success" if result.ErrorCode == ErrorCodes.NONE else "error",
-                error_message=result.ErrorMesg if result.ErrorCode != ErrorCodes.NONE else None,
-                execution_time_ms=execution_time_ms,
-            )
-
-            return result
-
-        except Exception as e:
-            execution_time_ms = int((time.time() - start_time) * 1000)
-
-            # Log the error (input_json captured at start of try block)
-            log_entry = RequestLog(
-                parameter=parameter,
-                workflow_id=workflow.id if workflow else None,
-                option_object=input_json,
-                response_object=None,
-                status="error",
-                error_message=str(e),
-                execution_time_ms=execution_time_ms,
-            )
-            db.add(log_entry)
-            db.commit()
-
-            # Return error response
-            optionObject.ErrorCode = ErrorCodes.ERROR
-            optionObject.ErrorMesg = f"Workflow error: {str(e)}"
-            return _build_minimal_response(optionObject)
-
-        finally:
-            db.close()
 
 
 def _option_object_to_json(obj: OptionObject2015) -> str:
