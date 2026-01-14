@@ -1,5 +1,6 @@
 """REST API endpoints for workflow and request management."""
 import json
+import logging
 import ssl
 import time
 import uuid
@@ -7,6 +8,8 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -847,7 +850,7 @@ def _parse_connection_data(connection: Connection) -> dict:
     }
 
 
-def _build_connection_string(
+def _build_connection_url(
     driver: str,
     host: str,
     port: int,
@@ -856,20 +859,23 @@ def _build_connection_string(
     password: str,
     ssl_mode: str = "disabled",
     ssl_check_hostname: bool = True,
-) -> Tuple[str, dict]:
-    """Build a SQLAlchemy connection string and connect_args with SSL support.
+) -> Tuple[Any, dict]:
+    """Build a SQLAlchemy URL and connect_args with SSL support.
 
     Args:
         ssl_mode: 'disabled', 'cert_none', 'cert_optional', 'cert_required'
         ssl_check_hostname: Whether to verify the server hostname matches the certificate
 
     Returns:
-        Tuple of (connection_string, connect_args)
+        Tuple of (URL, connect_args)
     """
+    from sqlalchemy import URL
+
     connect_args: dict = {}
+    query: dict = {}
 
     if driver == "iris":
-        conn_str = f"iris://{username}:{password}@{host}:{port}/{database}"
+        drivername = "iris"
 
         if ssl_mode != "disabled":
             ssl_context = ssl.create_default_context()
@@ -886,46 +892,49 @@ def _build_connection_string(
 
             connect_args["sslcontext"] = ssl_context
 
-        return conn_str, connect_args
-
     elif driver == "mssql":
-        # MSSQL uses Encrypt and TrustServerCertificate params
-        base = f"mssql+pyodbc://{username}:{password}@{host}:{port}/{database}?driver=ODBC+Driver+17+for+SQL+Server"
+        drivername = "mssql+pyodbc"
+        query["driver"] = "ODBC Driver 17 for SQL Server"
         if ssl_mode == "disabled":
-            base += "&Encrypt=no"
+            query["Encrypt"] = "no"
         elif ssl_mode == "cert_none":
-            base += "&Encrypt=yes&TrustServerCertificate=yes"
+            query["Encrypt"] = "yes"
+            query["TrustServerCertificate"] = "yes"
         else:
             # cert_optional or cert_required - verify certificate
-            base += "&Encrypt=yes&TrustServerCertificate=no"
-        return base, connect_args
+            query["Encrypt"] = "yes"
+            query["TrustServerCertificate"] = "no"
 
     elif driver == "postgresql":
-        # PostgreSQL uses sslmode param
-        base = f"postgresql://{username}:{password}@{host}:{port}/{database}"
+        drivername = "postgresql"
         if ssl_mode == "disabled":
-            return f"{base}?sslmode=disable", connect_args
+            query["sslmode"] = "disable"
         elif ssl_mode == "cert_none":
-            return f"{base}?sslmode=require", connect_args
+            query["sslmode"] = "require"
         elif ssl_mode == "cert_optional":
-            return f"{base}?sslmode=prefer", connect_args
+            query["sslmode"] = "prefer"
         else:  # cert_required
-            if ssl_check_hostname:
-                return f"{base}?sslmode=verify-full", connect_args
-            else:
-                return f"{base}?sslmode=verify-ca", connect_args
+            query["sslmode"] = "verify-full" if ssl_check_hostname else "verify-ca"
 
     elif driver == "mysql":
-        # MySQL uses ssl_disabled or ssl params
-        base = f"mysql+pymysql://{username}:{password}@{host}:{port}/{database}"
+        drivername = "mysql+pymysql"
         if ssl_mode == "disabled":
-            return f"{base}?ssl_disabled=true", connect_args
-        else:
-            # For MySQL, ssl is enabled by default when not disabled
-            return base, connect_args
+            query["ssl_disabled"] = "true"
 
     else:
         raise ValueError(f"Unsupported driver: {driver}")
+
+    url = URL.create(
+        drivername=drivername,
+        username=username,
+        password=password,
+        host=host,
+        port=port,
+        database=database,
+        query=query,
+    )
+
+    return url, connect_args
 
 
 @router.get("/connections", response_model=List[ConnectionResponse])
@@ -1111,8 +1120,8 @@ def test_connection(
 
     engine = None
     try:
-        # Build connection string and connect_args
-        conn_string, connect_args = _build_connection_string(
+        # Build connection URL and connect_args
+        conn_url, connect_args = _build_connection_url(
             driver=connection.driver,
             host=conn_data["host"],
             port=conn_data["port"],
@@ -1123,12 +1132,14 @@ def test_connection(
             ssl_check_hostname=conn_data.get("ssl_check_hostname", True),
         )
 
-        # Merge with timeout arg
-        connect_args["connect_timeout"] = 5
+        # Add timeout arg for drivers that support it
+        # IRIS doesn't support connect_timeout in connect_args
+        if connection.driver != "iris":
+            connect_args["connect_timeout"] = 5
 
         # Try to connect with limited pool
         engine = create_engine(
-            conn_string,
+            conn_url,
             connect_args=connect_args,
             pool_size=1,
             max_overflow=0
@@ -1139,8 +1150,16 @@ def test_connection(
         return ConnectionTestResult(success=True, message="Connection successful")
 
     except ValueError as e:
+        logger.error("Connection test failed (ValueError): %s", str(e))
         return ConnectionTestResult(success=False, message=str(e))
     except Exception as e:
+        logger.exception("Connection test failed for '%s' at '%s' (%s://%s:%s/%s)",
+                         conn_data["username"],
+                        connection.name,
+                        connection.driver,
+                        conn_data["host"],
+                        conn_data["port"],
+                        conn_data["database"])
         return ConnectionTestResult(success=False, message=f"Connection failed: {str(e)}")
     finally:
         if engine:

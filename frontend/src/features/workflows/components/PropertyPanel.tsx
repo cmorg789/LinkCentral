@@ -38,7 +38,7 @@ export function PropertyPanel({ selectedNode, onUpdateNode, onDeleteNode }: Prop
     );
   }
 
-  const handlePropertyChange = (key: string, value: string | CaseItem[]) => {
+  const handlePropertyChange = (key: string, value: string | CaseItem[] | Record<string, string>) => {
     onUpdateNode(selectedNode.id, {
       ...selectedNode.data,
       [key]: value,
@@ -140,6 +140,75 @@ export function PropertyPanel({ selectedNode, onUpdateNode, onDeleteNode }: Prop
               onChange={(v) => handlePropertyChange(prop.key, v)}
             />
           )}
+        </div>
+      );
+    }
+
+    // Handle key-value pairs (for SQL parameters, etc.)
+    if (prop.type === 'key_value') {
+      const kvValue = (selectedNode.data?.[prop.key] as Record<string, string>) ?? {};
+      const entries = Object.entries(kvValue);
+
+      const handleKvChange = (oldKey: string, newKey: string, newValue: string) => {
+        const newKv = { ...kvValue };
+        if (oldKey !== newKey) {
+          delete newKv[oldKey];
+        }
+        if (newKey) {
+          newKv[newKey] = newValue;
+        }
+        handlePropertyChange(prop.key, newKv);
+      };
+
+      const handleKvAdd = () => {
+        const newKv = { ...kvValue, '': '' };
+        handlePropertyChange(prop.key, newKv);
+      };
+
+      const handleKvRemove = (key: string) => {
+        const newKv = { ...kvValue };
+        delete newKv[key];
+        handlePropertyChange(prop.key, newKv);
+      };
+
+      return (
+        <div className="space-y-2">
+          {entries.map(([k, v], idx) => (
+            <div key={idx} className="flex gap-2 items-center">
+              <Input
+                type="text"
+                value={k}
+                placeholder="param"
+                className="w-24 text-sm"
+                onChange={(e) => handleKvChange(k, e.target.value, v)}
+              />
+              <span className="text-gray-400">=</span>
+              <Input
+                type="text"
+                value={v}
+                placeholder="@var.value"
+                className="flex-1 text-sm"
+                onChange={(e) => handleKvChange(k, k, e.target.value)}
+              />
+              <button
+                type="button"
+                onClick={() => handleKvRemove(k)}
+                className="p-1 text-gray-400 hover:text-red-500"
+              >
+                <Minus size={14} />
+              </button>
+            </div>
+          ))}
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={handleKvAdd}
+            className="w-full"
+          >
+            <Plus size={14} />
+            Add Parameter
+          </Button>
         </div>
       );
     }

@@ -16,7 +16,7 @@ export interface CaseListConfig {
 export interface PropertyDefinition {
   key: string;
   label: string;
-  type: 'text' | 'select' | 'number' | 'dynamic_select' | 'case_list';
+  type: 'text' | 'select' | 'number' | 'dynamic_select' | 'case_list' | 'key_value';
   placeholder?: string;
   required?: boolean;
   options?: Array<{ value: string; label: string }>;
@@ -274,6 +274,7 @@ export const NODE_DEFINITIONS: Record<string, NodeDefinition> = {
         expandModalType: 'sql',
       },
       { key: 'output_variable', label: 'Output Variable', type: 'text', required: true, placeholder: 'sql_result' },
+      { key: 'parameters', label: 'Parameters', type: 'key_value', helpText: 'Map :param names to values (supports @var.name templates)' },
     ],
     inputs: ['default'],
     outputs: ['default'],
