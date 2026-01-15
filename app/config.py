@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8080
     soap_path: str = "/ScriptLinkService.asmx"
+    debug: bool = False  # Enables auto-reload
+    script_timeout: int = 30  # Max seconds for script execution
 
     # Database
     database_url: str = "sqlite:///data/scriptlink.db"

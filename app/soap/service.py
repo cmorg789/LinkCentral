@@ -1,7 +1,12 @@
 """SOAP service implementation for ScriptLink."""
+import io
 import json
+import logging
+import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from spyne import Application, Service, rpc
@@ -12,9 +17,17 @@ from spyne.server.wsgi import WsgiApplication
 from sqlalchemy.orm import Session
 
 from app import __version__
-from app.database.connection import get_session
-from app.database.models import Workflow, RequestLog
+from app.config import settings
+from app.db import get_session, RequestLog
 from app.soap.types import OptionObject2015, ErrorCodes, TNS
+from app.scriptlink import ScriptRouter, OptionObjectWrapper, ScriptLinkError
+
+logger = logging.getLogger(__name__)
+
+# Initialize the script router
+SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
+DATA_DIR = Path(__file__).parent.parent.parent / "data"
+_router = ScriptRouter(SCRIPTS_DIR, DATA_DIR)
 
 
 class ScriptLinkService(Service):
@@ -34,39 +47,40 @@ class ScriptLinkService(Service):
     def RunScript(optionObject, parameter):
         """Process form data and return modifications.
 
+        Routes to a Python script based on the parameter name.
+        Scripts are located in the /scripts directory with filename matching the parameter.
+
         Args:
             optionObject: The OptionObject2015 containing form state
-            parameter: String used to route to the appropriate workflow
+            parameter: String used to route to the appropriate script (e.g., "ADMIT" -> scripts/ADMIT.py)
 
         Returns:
             Modified OptionObject2015
         """
         start_time = time.time()
-        workflow = None
-        input_json = None
 
         with get_session() as db:
+            # Create wrapper for Pythonic access
+            wrapper = OptionObjectWrapper(optionObject)
+            input_json = json.dumps(wrapper.to_dict())
+
             try:
-                # Capture input JSON BEFORE execution (engine modifies option_object in-place)
-                input_json = _option_object_to_json(optionObject)
+                # Find script handler
+                handler = _router.get_handler(parameter)
 
-                # Look up workflow by parameter
-                workflow = db.query(Workflow).filter(
-                    Workflow.parameter == parameter,
-                    Workflow.is_active == True
-                ).first()
-
-                if workflow is None:
-                    # No workflow found - always log and return error
+                if handler is None:
+                    # No script found - save request data for development and return error
                     execution_time_ms = int((time.time() - start_time) * 1000)
+
+                    # Save the request data to help develop the script
+                    _router.save_missing_script_data(parameter, wrapper.to_dict())
 
                     # Log the unconfigured request
                     log_entry = RequestLog(
                         parameter=parameter,
-                        workflow_id=None,
                         option_object=input_json,
                         response_object=None,
-                        status="no_workflow",
+                        status="no_script",
                         error_message=f"Script not configured: {parameter}",
                         execution_time_ms=execution_time_ms,
                     )
@@ -78,35 +92,81 @@ class ScriptLinkService(Service):
                     optionObject.ErrorMesg = f"Script not configured: {parameter}"
                     return _build_minimal_response(optionObject)
 
-                # Workflow found - execute it
-                from app.workflow.engine import WorkflowEngine
+                # Script found - execute with stdout capture and timeout
+                def run_script():
+                    captured = io.StringIO()
+                    old_out = sys.stdout
+                    try:
+                        sys.stdout = captured
+                        res = handler(wrapper)
+                        return res, captured.getvalue()
+                    finally:
+                        sys.stdout = old_out
 
-                engine = WorkflowEngine(workflow, db)
-                result = engine.execute(optionObject)
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(run_script)
+                    try:
+                        result, script_output = future.result(timeout=settings.script_timeout)
+                    except FuturesTimeoutError:
+                        raise TimeoutError(f"Script timed out after {settings.script_timeout}s")
+
+                # Log any print output from the script
+                if script_output:
+                    logger.info(f"[{parameter}] {script_output.rstrip()}")
+
+                # If script returned None, build response from wrapper
+                if result is None:
+                    result = wrapper.build_response()
 
                 execution_time_ms = int((time.time() - start_time) * 1000)
 
-                # Log based on workflow's logging config
-                _log_request(
-                    db=db,
-                    workflow=workflow,
-                    option_object_json=input_json,
-                    response_object=result,
-                    execution_context=engine.get_context_json(),
+                # Get diff for logging
+                diff = wrapper.get_diff()
+
+                # Log the request
+                log_entry = RequestLog(
+                    parameter=parameter,
+                    option_object=input_json,
+                    response_object=_option_object_to_json(result),
+                    execution_context=json.dumps({"diff": diff, "output": script_output}) if (diff or script_output) else None,
                     status="success" if result.ErrorCode == ErrorCodes.NONE else "error",
                     error_message=result.ErrorMesg if result.ErrorCode != ErrorCodes.NONE else None,
                     execution_time_ms=execution_time_ms,
                 )
+                db.add(log_entry)
+                db.commit()
+
+                return result
+
+            except ScriptLinkError as e:
+                # Script raised a ScriptLink error - use its error_code
+                execution_time_ms = int((time.time() - start_time) * 1000)
+
+                # Build response with any changes made before the error
+                result = wrapper.build_response()
+                result.ErrorCode = e.error_code
+                result.ErrorMesg = str(e)
+
+                log_entry = RequestLog(
+                    parameter=parameter,
+                    option_object=input_json,
+                    response_object=_option_object_to_json(result),
+                    status=type(e).__name__.lower().replace("error", ""),
+                    error_message=str(e),
+                    execution_time_ms=execution_time_ms,
+                )
+                db.add(log_entry)
+                db.commit()
 
                 return result
 
             except Exception as e:
+                # Unexpected error
                 execution_time_ms = int((time.time() - start_time) * 1000)
+                logger.exception(f"Script error for parameter {parameter}")
 
-                # Log the error
                 log_entry = RequestLog(
                     parameter=parameter,
-                    workflow_id=workflow.id if workflow else None,
                     option_object=input_json,
                     response_object=None,
                     status="error",
@@ -116,9 +176,8 @@ class ScriptLinkService(Service):
                 db.add(log_entry)
                 db.commit()
 
-                # Return error response
                 optionObject.ErrorCode = ErrorCodes.ERROR
-                optionObject.ErrorMesg = f"Workflow error: {str(e)}"
+                optionObject.ErrorMesg = f"Script error: {str(e)}"
                 return _build_minimal_response(optionObject)
 
 
@@ -206,73 +265,6 @@ def _build_minimal_response(obj: OptionObject2015) -> OptionObject2015:
     """
     obj.Forms = []
     return obj
-
-
-def _log_request(
-    db: Session,
-    workflow: Workflow,
-    option_object_json: str,
-    response_object: OptionObject2015,
-    execution_context: Optional[str],
-    status: str,
-    error_message: Optional[str],
-    execution_time_ms: int,
-) -> None:
-    """Log request based on workflow's logging configuration.
-
-    Args:
-        option_object_json: Pre-serialized JSON of the original request (captured before
-            workflow execution, since the engine modifies the option_object in-place).
-    """
-    config = json.loads(workflow.logging_config)
-
-    if not config.get("enabled", True):
-        return
-
-    mode = config.get("mode", "last_n")
-    filters = config.get("filters", {})
-    storage = config.get("storage", {})
-
-    # Check filters
-    if status == "success" and not filters.get("log_on_success", True):
-        return
-    if status == "error" and not filters.get("log_on_error", True):
-        return
-
-    # Build log entry
-    log_entry = RequestLog(
-        parameter=workflow.parameter,
-        workflow_id=workflow.id,
-        option_object=option_object_json if storage.get("include_request", True) else None,
-        response_object=_option_object_to_json(response_object) if storage.get("include_response", True) else None,
-        execution_context=execution_context if storage.get("include_context", False) else None,
-        status=status,
-        error_message=error_message,
-        execution_time_ms=execution_time_ms,
-    )
-    db.add(log_entry)
-    db.commit()
-
-    # Handle last_n retention
-    if mode == "last_n":
-        retention = config.get("retention", {})
-        count = retention.get("count", 100)
-        _cleanup_old_logs(db, workflow.id, keep_last=count)
-
-
-def _cleanup_old_logs(db: Session, workflow_id: str, keep_last: int) -> None:
-    """Delete old logs, keeping only the last N entries."""
-    # Get IDs to keep
-    keep_ids = db.query(RequestLog.id).filter(
-        RequestLog.workflow_id == workflow_id
-    ).order_by(RequestLog.created_at.desc()).limit(keep_last).subquery()
-
-    # Delete the rest
-    db.query(RequestLog).filter(
-        RequestLog.workflow_id == workflow_id,
-        ~RequestLog.id.in_(keep_ids)
-    ).delete(synchronize_session=False)
-    db.commit()
 
 
 # Create the Spyne application

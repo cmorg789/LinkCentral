@@ -103,10 +103,10 @@ class OptionObject2015(OptionObjectBase):
 class ErrorCodes:
     """Error code constants matching myAvatar behavior."""
 
-    NONE = 0.0  # Success - no message displayed
-    ERROR = 1.0  # Error message - blocks form submission
-    OK_CANCEL = 2.0  # Message with OK/Cancel buttons
-    ALERT = 3.0  # Informational alert popup
-    CONFIRM = 4.0  # Yes/No confirmation dialog
-    URL = 5.0  # Opens URL in ErrorMesg field
-    OPEN_FORM = 6.0  # Opens form specified in ErrorMesg
+    NONE = 0  # Success - no message displayed
+    ERROR = 1  # Error message - blocks form submission
+    OK_CANCEL = 2  # Message with OK/Cancel buttons
+    ALERT = 3  # Informational alert popup
+    CONFIRM = 4 # Yes/No confirmation dialog
+    URL = 5  # Opens URL in ErrorMesg field
+    OPEN_FORM = 6  # Opens form specified in ErrorMesg

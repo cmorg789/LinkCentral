@@ -1,0 +1,65 @@
+# Database Connections Configuration
+# Copy this file to connections.yaml and configure your connections.
+#
+# Password options (in order of preference):
+#   password_encrypted: Encrypted password (recommended) - use encrypt_password() to generate
+#   password_env: Environment variable containing the password
+#   password: Plain text password (not recommended)
+#
+# To encrypt a password:
+#   python -c "from app.scriptlink.connections import encrypt_password; print(encrypt_password('your_password'))"
+#
+# Note: SECRET_KEY must be set in your environment to encrypt/decrypt passwords.
+
+connections:
+  AVATAR_DB:
+    driver: iris
+    host: sql.example.com
+    port: 1433
+    database: myavatar
+    username: scriptlink_user
+    password_encrypted: gAAAAABl...  # Run encrypt_password() to generate this
+    ssl_mode: cert_none  # Options: disabled, cert_none, cert_optional, cert_required
+
+  # Example: Using environment variable for password (alternative)
+  # AVATAR_DB:
+  #   driver: mssql
+  #   host: sql.example.com
+  #   port: 1433
+  #   database: myavatar
+  #   username: scriptlink_user
+  #   password_env: AVATAR_DB_PASSWORD
+  #   ssl_mode: disabled
+
+  # Example: PostgreSQL connection
+  # ReportingDB:
+  #   driver: postgresql
+  #   host: postgres.example.com
+  #   port: 5432
+  #   database: reports
+  #   username: readonly_user
+  #   password_env: REPORTS_PASSWORD
+  #   ssl_mode: cert_required
+  #   ssl_check_hostname: true
+
+  # Example: InterSystems IRIS/Cache connection
+  # CacheDB:
+  #   driver: iris
+  #   host: iris.example.com
+  #   port: 1972
+  #   database: NAMESPACE
+  #   username: iris_user
+  #   password_env: IRIS_PASSWORD
+  #   ssl_mode: disabled
+
+  # Example: MySQL connection
+  # MySQL_DB:
+  #   driver: mysql
+  #   host: mysql.example.com
+  #   port: 3306
+  #   database: mydb
+  #   username: app_user
+  #   password_env: MYSQL_PASSWORD
+
+# Supported drivers: mssql, postgresql, iris, mysql
+# SSL modes: disabled, cert_none, cert_optional, cert_required
