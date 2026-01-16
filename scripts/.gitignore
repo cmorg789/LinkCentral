@@ -1,0 +1,4 @@
+# Ignore all scripts except examples
+*
+!.gitignore
+!_example*.py

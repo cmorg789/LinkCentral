@@ -26,19 +26,17 @@ _KEY_SALT = b"linkcentral_connections_v1"
 
 
 def _get_fernet() -> Fernet:
-    """Get a Fernet instance using SECRET_KEY from environment.
+    """Get a Fernet instance using SECRET_KEY from settings.
 
     Derives a proper Fernet key from the SECRET_KEY using PBKDF2.
 
     Raises:
         ValueError: If SECRET_KEY is not set
     """
-    secret_key = os.getenv("SECRET_KEY")
-    if not secret_key:
-        raise ValueError(
-            "SECRET_KEY environment variable is required to decrypt passwords. "
-            "Set it in your .env file."
-        )
+    # Import here to avoid circular imports and ensure .env is loaded
+    from app.config import settings
+
+    secret_key = settings.secret_key
 
     # Derive a 32-byte key from SECRET_KEY using PBKDF2
     kdf = PBKDF2HMAC(
