@@ -31,7 +31,7 @@ Example script:
         # Debug output (captured by server)
         print(f"Processed patient {entity_id}")
 """
-from app.scriptlink.option_object import OptionObjectWrapper, FieldWrapper, FieldAccessor
+from app.scriptlink.option_object import OptionObjectWrapper, FieldWrapper, FieldAccessor, from_dict
 from app.scriptlink.errors import (
     ScriptLinkError,
     ValidationError,
@@ -53,6 +53,8 @@ __all__ = [
     "FieldAccessor",
     # Types
     "OptionObject2015",
+    # Serialization
+    "from_dict",
     # Errors
     "ScriptLinkError",
     "ValidationError",

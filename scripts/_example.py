@@ -4,6 +4,10 @@ Copy this file and rename to match your ScriptLink parameter.
 E.g., MY_VALIDATION.py for parameter "MY_VALIDATION"
 
 The script will be discovered automatically at runtime - no restart needed.
+
+Testing locally:
+    python -m app.scriptlink.test MY_VALIDATION data/missing_scripts/MY_VALIDATION_2026-01-16.json
+    python -m app.scriptlink.test MY_VALIDATION fixture.json --verbose  # shows print() output
 """
 from app.scriptlink import OptionObjectWrapper, OptionObject2015, ValidationError, AlertError, get_connection
 

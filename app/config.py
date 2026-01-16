@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     soap_path: str = "/ScriptLinkService.asmx"
     debug: bool = False  # Enables auto-reload
     script_timeout: int = 30  # Max seconds for script execution
+    script_error_blocking: bool = False # Should script errors block form?
 
     # Database
     database_url: str = "sqlite:///data/scriptlink.db"

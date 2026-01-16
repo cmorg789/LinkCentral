@@ -510,3 +510,91 @@ class OptionObjectWrapper:
             "RowAction": row.RowAction,
             "Fields": fields,
         }
+
+
+def from_dict(data: Dict[str, Any]) -> OptionObject2015:
+    """Reconstruct OptionObject2015 from dictionary (reverse of to_dict()).
+
+    Used for loading JSON fixtures in testing.
+
+    Args:
+        data: Dictionary with structure matching to_dict() output
+
+    Returns:
+        Fully populated OptionObject2015 instance
+
+    Example:
+        with open("fixture.json") as f:
+            data = json.load(f)
+        option_object = from_dict(data)
+    """
+    obj = OptionObject2015()
+
+    # Copy metadata fields
+    obj.EntityID = data.get("EntityID")
+    obj.EpisodeNumber = data.get("EpisodeNumber")
+    obj.ErrorCode = data.get("ErrorCode", 0.0)
+    obj.ErrorMesg = data.get("ErrorMesg")
+    obj.Facility = data.get("Facility")
+    obj.NamespaceName = data.get("NamespaceName")
+    obj.OptionId = data.get("OptionId")
+    obj.OptionStaffId = data.get("OptionStaffId")
+    obj.OptionUserId = data.get("OptionUserId")
+    obj.ParentNamespace = data.get("ParentNamespace")
+    obj.ServerName = data.get("ServerName")
+    obj.SystemCode = data.get("SystemCode")
+    obj.SessionToken = data.get("SessionToken")
+
+    # Reconstruct Forms
+    forms_data = data.get("Forms", [])
+    if forms_data:
+        obj.Forms = [_dict_to_form(f) for f in forms_data]
+    else:
+        obj.Forms = []
+
+    return obj
+
+
+def _dict_to_form(data: Dict[str, Any]) -> FormObject:
+    """Convert dictionary to FormObject."""
+    form = FormObject()
+    form.FormId = data.get("FormId")
+    form.MultipleIteration = data.get("MultipleIteration", False)
+
+    # Reconstruct CurrentRow
+    current_row_data = data.get("CurrentRow")
+    if current_row_data is not None:
+        form.CurrentRow = _dict_to_row(current_row_data)
+
+    # Reconstruct OtherRows
+    other_rows_data = data.get("OtherRows", [])
+    if other_rows_data:
+        form.OtherRows = [_dict_to_row(r) for r in other_rows_data]
+
+    return form
+
+
+def _dict_to_row(data: Dict[str, Any]) -> RowObject:
+    """Convert dictionary to RowObject."""
+    row = RowObject()
+    row.RowId = data.get("RowId")
+    row.ParentRowId = data.get("ParentRowId")
+    row.RowAction = data.get("RowAction")
+
+    # Reconstruct Fields
+    fields_data = data.get("Fields", [])
+    if fields_data:
+        row.Fields = [_dict_to_field(f) for f in fields_data]
+
+    return row
+
+
+def _dict_to_field(data: Dict[str, Any]) -> FieldObject:
+    """Convert dictionary to FieldObject."""
+    field = FieldObject()
+    field.FieldNumber = data.get("FieldNumber")
+    field.FieldValue = data.get("FieldValue")
+    field.Enabled = data.get("Enabled", "1")
+    field.Lock = data.get("Lock", "0")
+    field.Required = data.get("Required", "0")
+    return field

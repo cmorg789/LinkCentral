@@ -59,7 +59,7 @@ class ScriptLinkService(Service):
         """
         start_time = time.time()
 
-        with get_session() as db:
+        with (get_session() as db):
             # Create wrapper for Pythonic access
             wrapper = OptionObjectWrapper(optionObject)
             input_json = json.dumps(wrapper.to_dict())
@@ -176,7 +176,8 @@ class ScriptLinkService(Service):
                 db.add(log_entry)
                 db.commit()
 
-                optionObject.ErrorCode = ErrorCodes.ERROR
+
+                optionObject.ErrorCode = ErrorCodes.ERROR if settings.script_error_blocking else ErrorCodes.ALERT
                 optionObject.ErrorMesg = f"Script error: {str(e)}"
                 return _build_minimal_response(optionObject)
 

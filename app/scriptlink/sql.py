@@ -2,10 +2,10 @@
 import ssl
 from typing import Any, Dict, List, Tuple
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, URL
 
 
-def _build_connection_string(
+def _build_connection_url(
     driver: str,
     host: str,
     port: int,
@@ -14,20 +14,21 @@ def _build_connection_string(
     password: str,
     ssl_mode: str = "disabled",
     ssl_check_hostname: bool = True,
-) -> Tuple[str, dict]:
-    """Build a SQLAlchemy connection string and connect_args with SSL support.
+) -> Tuple[URL, dict]:
+    """Build a SQLAlchemy URL and connect_args with SSL support.
 
     Args:
         ssl_mode: 'disabled', 'cert_none', 'cert_optional', 'cert_required'
         ssl_check_hostname: Whether to verify the server hostname matches the certificate
 
     Returns:
-        Tuple of (connection_string, connect_args)
+        Tuple of (URL, connect_args)
     """
     connect_args: dict = {}
+    query: Dict[str, str] = {}
 
     if driver == "iris":
-        conn_str = f"iris://{username}:{password}@{host}:{port}/{database}"
+        drivername = "iris"
 
         if ssl_mode != "disabled":
             ssl_context = ssl.create_default_context()
@@ -44,46 +45,51 @@ def _build_connection_string(
 
             connect_args["sslcontext"] = ssl_context
 
-        return conn_str, connect_args
-
     elif driver == "mssql":
-        # MSSQL uses Encrypt and TrustServerCertificate params
-        base = f"mssql+pyodbc://{username}:{password}@{host}:{port}/{database}?driver=ODBC+Driver+17+for+SQL+Server"
+        drivername = "mssql+pyodbc"
+        query["driver"] = "ODBC Driver 17 for SQL Server"
+
         if ssl_mode == "disabled":
-            base += "&Encrypt=no"
+            query["Encrypt"] = "no"
         elif ssl_mode == "cert_none":
-            base += "&Encrypt=yes&TrustServerCertificate=yes"
+            query["Encrypt"] = "yes"
+            query["TrustServerCertificate"] = "yes"
         else:
-            # cert_optional or cert_required - verify certificate
-            base += "&Encrypt=yes&TrustServerCertificate=no"
-        return base, connect_args
+            query["Encrypt"] = "yes"
+            query["TrustServerCertificate"] = "no"
 
     elif driver == "postgresql":
-        # PostgreSQL uses sslmode param
-        base = f"postgresql://{username}:{password}@{host}:{port}/{database}"
+        drivername = "postgresql"
+
         if ssl_mode == "disabled":
-            return f"{base}?sslmode=disable", connect_args
+            query["sslmode"] = "disable"
         elif ssl_mode == "cert_none":
-            return f"{base}?sslmode=require", connect_args
+            query["sslmode"] = "require"
         elif ssl_mode == "cert_optional":
-            return f"{base}?sslmode=prefer", connect_args
+            query["sslmode"] = "prefer"
         else:  # cert_required
-            if ssl_check_hostname:
-                return f"{base}?sslmode=verify-full", connect_args
-            else:
-                return f"{base}?sslmode=verify-ca", connect_args
+            query["sslmode"] = "verify-full" if ssl_check_hostname else "verify-ca"
 
     elif driver == "mysql":
-        # MySQL uses ssl_disabled or ssl params
-        base = f"mysql+pymysql://{username}:{password}@{host}:{port}/{database}"
+        drivername = "mysql+pymysql"
+
         if ssl_mode == "disabled":
-            return f"{base}?ssl_disabled=true", connect_args
-        else:
-            # For MySQL, ssl is enabled by default when not disabled
-            return base, connect_args
+            query["ssl_disabled"] = "true"
 
     else:
         raise ValueError(f"Unsupported driver: {driver}")
+
+    url = URL.create(
+        drivername=drivername,
+        username=username,
+        password=password,
+        host=host,
+        port=port,
+        database=database,
+        query=query,
+    )
+
+    return url, connect_args
 
 
 class SQLHelper:
@@ -116,7 +122,7 @@ class SQLHelper:
 
     def _create_engine(self):
         """Create a SQLAlchemy engine for this connection."""
-        conn_string, connect_args = _build_connection_string(
+        url, connect_args = _build_connection_url(
             driver=self._config["driver"],
             host=self._config["host"],
             port=self._config["port"],
@@ -127,7 +133,7 @@ class SQLHelper:
             ssl_check_hostname=self._config.get("ssl_check_hostname", True),
         )
         return create_engine(
-            conn_string,
+            url,
             connect_args=connect_args,
             pool_pre_ping=True,  # Verify connections before use
             pool_size=5,
