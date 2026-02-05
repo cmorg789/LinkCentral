@@ -9,7 +9,17 @@ Testing locally:
     python -m app.scriptlink.test MY_VALIDATION data/missing_scripts/MY_VALIDATION_2026-01-16.json
     python -m app.scriptlink.test MY_VALIDATION fixture.json --verbose  # shows print() output
 """
-from app.scriptlink import OptionObjectWrapper, OptionObject2015, ValidationError, AlertError, get_connection
+from app.scriptlink import (
+    OptionObjectWrapper,
+    OptionObject2015,
+    ValidationError,
+    AlertError,
+    OkCancelError,
+    ConfirmError,
+    OpenUrlError,
+    OpenFormError,
+    get_connection,
+)
 
 
 def run(option_object: OptionObjectWrapper) -> OptionObject2015:
@@ -74,6 +84,18 @@ def run(option_object: OptionObjectWrapper) -> OptionObject2015:
     # =========================================================================
     # ERROR RESPONSES
     # =========================================================================
+    #
+    # Error Types (raise as exceptions):
+    #   ValidationError  - Blocks form submission, shows error message
+    #   AlertError       - Shows popup, allows submission to continue
+    #   OkCancelError    - Shows OK/Cancel dialog
+    #   ConfirmError     - Shows Yes/No confirmation dialog
+    #   OpenUrlError     - Opens URL in browser
+    #   OpenFormError    - Opens another form by ID
+    #
+    # Note: Unhandled exceptions show as ALERT by default (configurable via
+    #       script_error_blocking setting). Use ValidationError to explicitly
+    #       block form submission.
 
     # Block form submission with error (option 1: raise exception)
     if not value:
@@ -87,10 +109,12 @@ def run(option_object: OptionObjectWrapper) -> OptionObject2015:
     # or: option_object.set_alert("Info message")
 
     # Open URL in browser
-    # option_object.open_url("https://example.com")
+    # raise OpenUrlError("https://example.com")
+    # or: option_object.open_url("https://example.com")
 
     # Open another form
-    # option_object.open_form("FORM_ID")
+    # raise OpenFormError("FORM_ID")
+    # or: option_object.open_form("FORM_ID")
 
     # =========================================================================
     # LOGGING / DEBUG OUTPUT
