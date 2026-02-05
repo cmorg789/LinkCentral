@@ -8,7 +8,7 @@
     }
 
     # Proxy all requests to the uvicorn backend
-    reverse_proxy localhost:8080
+    reverse_proxy localhost:8000
 }
 
 # Optional: Redirect HTTP to HTTPS

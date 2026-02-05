@@ -1,0 +1,31 @@
+<service>
+  <id>LinkCentral</id>
+  <name>LinkCentral ScriptLink</name>
+  <description>SOAP middleware for myAvatar ScriptLink API</description>
+
+  <executable>python</executable>
+  <arguments>-m uvicorn app.main:app --host 0.0.0.0 --port 8000</arguments>
+  <workingdirectory>C:\Users\connorm\PycharmProjects\LinkCentral</workingdirectory>
+
+  <!-- Environment variables -->
+  <env name="SECRET_KEY" value="CHANGE_ME"/>
+
+  <!-- Logging -->
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>5</keepFiles>
+  </log>
+  <logpath>%BASE%\logs</logpath>
+
+  <!-- Restart on failure -->
+  <onfailure action="restart" delay="5 sec"/>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+
+  <!-- Service account (runs as Local System by default) -->
+  <!-- Uncomment to run as a specific user: -->
+  <!-- <serviceaccount>
+    <username>.\ServiceUser</username>
+    <password>password</password>
+  </serviceaccount> -->
+</service>
