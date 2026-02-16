@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     secret_key: Optional[str] = None
 
     # Logging cleanup
-    cleanup_interval_minutes: int = 60  # How often to check for old logs
+    cleanup_interval_minutes: int = 0  # How often to check for old logs
     cleanup_retention_days: int = 30  # Delete logs older than this
 
     class Config:

@@ -226,6 +226,9 @@ def _maybe_cleanup_logs() -> None:
     """
     global _last_cleanup_time
 
+    if settings.cleanup_interval_minutes <= 0:
+        return
+
     now = datetime.now()
     if _last_cleanup_time is not None:
         elapsed = (now - _last_cleanup_time).total_seconds() / 60
