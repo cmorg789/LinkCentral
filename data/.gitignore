@@ -1,0 +1,4 @@
+# Ignore datastores
+missing_scripts/
+*.db
+*.json
