@@ -3,9 +3,10 @@ import io
 import json
 import logging
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -14,7 +15,6 @@ from spyne.decorator import srpc
 from spyne.model.primitive import Unicode
 from spyne.protocol.soap import Soap11
 from spyne.server.wsgi import WsgiApplication
-from sqlalchemy.orm import Session
 
 from app import __version__
 from app.config import settings
@@ -24,10 +24,44 @@ from app.scriptlink import ScriptRouter, OptionObjectWrapper, ScriptLinkError
 
 logger = logging.getLogger(__name__)
 
+# Thread-local stdout capture: allows each thread to capture print() output
+# independently without clobbering other threads' sys.stdout.
+_thread_local = threading.local()
+_original_stdout = sys.stdout
+
+
+class _ThreadLocalStdout:
+    """A sys.stdout replacement that routes writes to a per-thread buffer when set."""
+
+    def write(self, text):
+        buf = getattr(_thread_local, "capture_buffer", None)
+        if buf is not None:
+            buf.write(text)
+        else:
+            _original_stdout.write(text)
+
+    def flush(self):
+        buf = getattr(_thread_local, "capture_buffer", None)
+        if buf is not None:
+            buf.flush()
+        else:
+            _original_stdout.flush()
+
+    # Delegate attribute access (encoding, fileno, etc.) to the real stdout
+    def __getattr__(self, name):
+        return getattr(_original_stdout, name)
+
+
+# Install once at module load
+sys.stdout = _ThreadLocalStdout()
+
 # Initialize the script router
 SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
 _router = ScriptRouter(SCRIPTS_DIR, DATA_DIR)
+
+# Log cleanup state
+_last_cleanup_time: Optional[datetime] = None
 
 
 class ScriptLinkService(Service):
@@ -59,7 +93,7 @@ class ScriptLinkService(Service):
         """
         start_time = time.time()
 
-        with (get_session() as db):
+        with get_session() as db:
             # Create wrapper for Pythonic access
             wrapper = OptionObjectWrapper(optionObject)
             input_json = json.dumps(wrapper.to_dict())
@@ -86,6 +120,7 @@ class ScriptLinkService(Service):
                     )
                     db.add(log_entry)
                     db.commit()
+                    _maybe_cleanup_logs()
 
                     # Return error response
                     optionObject.ErrorCode = ErrorCodes.ALERT
@@ -95,13 +130,12 @@ class ScriptLinkService(Service):
                 # Script found - execute with stdout capture and timeout
                 def run_script():
                     captured = io.StringIO()
-                    old_out = sys.stdout
+                    _thread_local.capture_buffer = captured
                     try:
-                        sys.stdout = captured
                         res = handler(wrapper)
                         return res, captured.getvalue()
                     finally:
-                        sys.stdout = old_out
+                        _thread_local.capture_buffer = None
 
                 with ThreadPoolExecutor(max_workers=1) as executor:
                     future = executor.submit(run_script)
@@ -135,6 +169,7 @@ class ScriptLinkService(Service):
                 )
                 db.add(log_entry)
                 db.commit()
+                _maybe_cleanup_logs()
 
                 return result
 
@@ -157,6 +192,7 @@ class ScriptLinkService(Service):
                 )
                 db.add(log_entry)
                 db.commit()
+                _maybe_cleanup_logs()
 
                 return result
 
@@ -175,11 +211,44 @@ class ScriptLinkService(Service):
                 )
                 db.add(log_entry)
                 db.commit()
-
+                _maybe_cleanup_logs()
 
                 optionObject.ErrorCode = ErrorCodes.ERROR if settings.script_error_blocking else ErrorCodes.ALERT
-                optionObject.ErrorMesg = f"Script error: {str(e)}"
+                optionObject.ErrorMesg = "LinkCentral: An unexpected error occurred. Check the server logs for details."
                 return _build_minimal_response(optionObject)
+
+
+def _maybe_cleanup_logs() -> None:
+    """Trigger a background log cleanup if the interval has elapsed.
+
+    The interval check is synchronous (just a datetime comparison).
+    The actual DELETE runs in a background thread to avoid blocking the response.
+    """
+    global _last_cleanup_time
+
+    now = datetime.now()
+    if _last_cleanup_time is not None:
+        elapsed = (now - _last_cleanup_time).total_seconds() / 60
+        if elapsed < settings.cleanup_interval_minutes:
+            return
+
+    # Update immediately so concurrent requests don't also trigger cleanup
+    _last_cleanup_time = now
+
+    threading.Thread(target=_run_cleanup, daemon=True).start()
+
+
+def _run_cleanup() -> None:
+    """Delete old request log entries in a background thread."""
+    try:
+        cutoff = datetime.now() - timedelta(days=settings.cleanup_retention_days)
+        with get_session() as db:
+            deleted = db.query(RequestLog).filter(RequestLog.created_at < cutoff).delete()
+            db.commit()
+            if deleted:
+                logger.info(f"Cleaned up {deleted} log entries older than {settings.cleanup_retention_days} days")
+    except Exception:
+        logger.exception("Failed to clean up old log entries")
 
 
 def _option_object_to_json(obj: OptionObject2015) -> str:
