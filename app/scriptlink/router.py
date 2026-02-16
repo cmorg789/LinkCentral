@@ -63,7 +63,7 @@ class ScriptRouter:
 
         return self._load_script(script_path, parameter)
 
-    def _load_script(self, path: Path, parameter: str) -> Optional[ScriptHandler]:
+    def _load_script(self, path: Path, parameter: str) -> ScriptHandler:
         """Load a script module and extract the handler function.
 
         Args:
@@ -71,35 +71,31 @@ class ScriptRouter:
             parameter: The parameter name (used as module name)
 
         Returns:
-            The run() function from the script or None if not found
+            The run() function from the script
+
+        Raises:
+            RuntimeError: If the script cannot be loaded or has no run() function
         """
-        try:
-            # Create a unique module name to avoid conflicts
-            module_name = f"scripts.{parameter}"
+        # Create a unique module name to avoid conflicts
+        module_name = f"scripts.{parameter}"
 
-            # Remove from cache if exists (for hot reload)
-            if module_name in sys.modules:
-                del sys.modules[module_name]
+        # Remove from cache if exists (for hot reload)
+        if module_name in sys.modules:
+            del sys.modules[module_name]
 
-            spec = importlib.util.spec_from_file_location(module_name, path)
-            if spec is None or spec.loader is None:
-                logger.error(f"Failed to create spec for script: {path}")
-                return None
+        spec = importlib.util.spec_from_file_location(module_name, path)
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"Failed to create module spec for script: {path}")
 
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[module_name] = module
-            spec.loader.exec_module(module)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
 
-            # Look for 'run' function
-            if hasattr(module, "run") and callable(module.run):
-                return module.run
+        # Look for 'run' function
+        if hasattr(module, "run") and callable(module.run):
+            return module.run
 
-            logger.warning(f"Script {path} has no 'run' function")
-            return None
-
-        except Exception as e:
-            logger.exception(f"Failed to load script {path}: {e}")
-            return None
+        raise RuntimeError(f"Script {path} has no 'run' function")
 
     def save_missing_script_data(self, parameter: str, option_object_dict: dict) -> Path:
         """Save OptionObject data for developing a missing script.
