@@ -214,6 +214,8 @@ python -m app.scriptlink encrypt-password --secret-key "your_secret_key"
 | `DATABASE_URL` | `sqlite:///data/scriptlink.db` | Request log database |
 | `SCRIPT_TIMEOUT` | `30` | Script timeout in seconds |
 | `SCRIPT_ERROR_BLOCKING` | `False` | Unhandled errors block form |
+| `CLEANUP_INTERVAL_MINUTES` | `0` | How often to prune old request logs (0 = disabled) |
+| `CLEANUP_RETENTION_DAYS` | `30` | Delete logs older than this many days |
 | `DEBUG` | `False` | Verbose logging |
 
 ## Deployment

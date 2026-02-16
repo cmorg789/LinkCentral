@@ -4,18 +4,25 @@ LinkCentral can run as a Windows service using [WinSW](https://github.com/winsw/
 
 ## Setup
 
-1. Download `WinSW-x64.exe` from the [WinSW releases page](https://github.com/winsw/winsw/releases)
-2. Copy the example XML configs from this directory to the project root:
+1. Create a virtual environment and install dependencies:
+   ```
+   python -m venv venv
+   venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
+
+2. Download `WinSW-x64.exe` from the [WinSW releases page](https://github.com/winsw/winsw/releases)
+3. Copy the example XML configs from this directory to the project root:
    ```
    copy docs\windows\LinkCentral-Service.xml .
    copy docs\windows\Caddy-Service.xml .
    ```
-3. Rename the WinSW executable to match each service XML:
+4. Rename the WinSW executable to match each service XML:
    ```
    copy WinSW-x64.exe LinkCentral-Service.exe
    copy WinSW-x64.exe Caddy-Service.exe
    ```
-4. Edit the XML files to match your environment (paths, ports, credentials, etc.)
+5. Edit the XML files to match your environment (paths, ports, credentials, etc.)
 
 ## Configuration
 
@@ -24,7 +31,7 @@ Environment variables can be set in the service XML or in a `.env` file. Uncomme
 ```xml
 <!-- <env name="SECRET_KEY" value="your_secret_key_here"/> -->  <!-- Only needed if using password_encrypted -->
 <env name="HOST" value="0.0.0.0"/>
-<env name="PORT" value="8080"/>
+<env name="PORT" value="8000"/>
 ```
 
 ## Managing Services
