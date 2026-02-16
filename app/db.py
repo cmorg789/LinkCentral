@@ -35,7 +35,7 @@ class RequestLog(Base):
     error_message = Column(Text, nullable=True)
     execution_time_ms = Column(Integer, nullable=True)
     source_ip = Column(String(45), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
 
     __table_args__ = (
         Index("idx_request_log_parameter", "parameter"),

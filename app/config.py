@@ -9,7 +9,7 @@ class Settings(BaseSettings):
 
     # Server
     host: str = "0.0.0.0"
-    port: int = 8080
+    port: int = 8000
     soap_path: str = "/ScriptLinkService.asmx"
     debug: bool = False  # Enables auto-reload
     script_timeout: int = 30  # Max seconds for script execution
@@ -22,7 +22,8 @@ class Settings(BaseSettings):
     secret_key: Optional[str] = None
 
     # Logging cleanup
-    cleanup_interval_minutes: int = 60
+    cleanup_interval_minutes: int = 60  # How often to check for old logs
+    cleanup_retention_days: int = 30  # Delete logs older than this
 
     class Config:
         env_file = ".env"
