@@ -196,6 +196,9 @@ def reload_connections() -> None:
     without restarting the server.
     """
     global _sql_helpers
+    # Dispose old engines to release database connections
+    for helper in _sql_helpers.values():
+        helper._engine.dispose()
     _sql_helpers = {}
     load_connections(force_reload=True)
 
