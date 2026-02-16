@@ -1,0 +1,20 @@
+<service>
+  <id>Caddy</id>
+  <name>Caddy Web Server</name>
+  <description>Reverse proxy for LinkCentral</description>
+
+  <executable>%BASE%\caddy.exe</executable>
+  <arguments>run --config "%BASE%\Caddyfile"</arguments>
+
+  <!-- Logging -->
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>5</keepFiles>
+  </log>
+  <logpath>%BASE%\logs</logpath>
+
+  <!-- Restart on failure -->
+  <onfailure action="restart" delay="5 sec"/>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+</service>

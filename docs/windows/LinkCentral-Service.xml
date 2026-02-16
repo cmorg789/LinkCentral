@@ -1,0 +1,35 @@
+<service>
+  <id>LinkCentral</id>
+  <name>LinkCentral ScriptLink</name>
+  <description>SOAP middleware for myAvatar ScriptLink API</description>
+
+  <executable>%BASE%\venv\Scripts\python.exe</executable>
+  <arguments>-m app.main</arguments>
+  <workingdirectory>%BASE%</workingdirectory>
+
+  <!-- Environment variables (Uncomment if using this instead of .env) -->
+  <!-- <env name="SECRET_KEY" value="CHANGE_ME"/>
+    <env name="HOST" value="0.0.0.0"/>
+    <env name="PORT" value="8080"/>
+    <env name="SOAP_PATH" value="/ScriptLinkService.asmx"/>
+    <env name="DATABASE_URL" value="sqlite:///data/scriptlink.db"/> -->
+
+  <!-- Logging -->
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>5</keepFiles>
+  </log>
+  <logpath>%BASE%\logs</logpath>
+
+  <!-- Restart on failure -->
+  <onfailure action="restart" delay="5 sec"/>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+
+  <!-- Service account (runs as Local System by default) -->
+  <!-- Uncomment to run as a specific user: -->
+  <!-- <serviceaccount>
+    <username>.\ServiceUser</username>
+    <password>password</password>
+  </serviceaccount> -->
+</service>

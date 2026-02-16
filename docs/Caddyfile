@@ -1,0 +1,17 @@
+# LinkCentral - Caddy Reverse Proxy
+# Uses self-signed certificate for HTTPS
+
+:443 {
+    # Generate self-signed certificate with SANs
+    tls internal {
+        on_demand
+    }
+
+    # Proxy all requests to the uvicorn backend
+    reverse_proxy localhost:8000
+}
+
+# Optional: Redirect HTTP to HTTPS
+:80 {
+    redir https://{host}{uri} permanent
+}
