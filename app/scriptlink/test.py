@@ -1,15 +1,10 @@
-"""CLI test runner for ScriptLink scripts.
+"""Test runner for ScriptLink scripts.
 
-Run scripts locally using captured OptionObject JSON fixtures.
+Runs scripts locally using captured OptionObject JSON fixtures.
 
 Usage:
-    python -m app.scriptlink.test PARAM fixture.json [--verbose]
-
-Example:
-    python -m app.scriptlink.test ADMIT data/missing_scripts/ADMIT_2026-01-16_143522.json
-    python -m app.scriptlink.test ADMIT fixture.json --verbose
+    python -m app.scriptlink test PARAM fixture.json [--verbose]
 """
-import argparse
 import io
 import json
 import sys
@@ -216,23 +211,12 @@ def format_output(result: TestResult, verbose: bool = False) -> str:
     return "\n".join(lines)
 
 
-def main():
-    """CLI entry point."""
-    parser = argparse.ArgumentParser(
-        description="Test ScriptLink scripts with JSON fixtures",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  python -m app.scriptlink.test ADMIT fixture.json
-  python -m app.scriptlink.test ADMIT data/missing_scripts/ADMIT_2026-01-16_143522.json --verbose
-        """
-    )
-    parser.add_argument("parameter", help="Script parameter name (filename without .py)")
-    parser.add_argument("fixture", help="Path to JSON fixture file")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Show script print() output")
+def main(args):
+    """Run a script test from parsed CLI arguments.
 
-    args = parser.parse_args()
-
+    Args:
+        args: Namespace with parameter, fixture, and verbose attributes.
+    """
     # Load fixture
     fixture_path = Path(args.fixture)
     if not fixture_path.is_absolute():
