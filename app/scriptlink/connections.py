@@ -25,18 +25,26 @@ _sql_helpers: Dict[str, SQLHelper] = {}
 _KEY_SALT = b"linkcentral_connections_v1"
 
 
-def _get_fernet() -> Fernet:
-    """Get a Fernet instance using SECRET_KEY from settings.
+def _get_fernet(secret_key: Optional[str] = None) -> Fernet:
+    """Get a Fernet instance using SECRET_KEY.
 
     Derives a proper Fernet key from the SECRET_KEY using PBKDF2.
+
+    Args:
+        secret_key: Explicit secret key. If None, loads from settings.
 
     Raises:
         ValueError: If SECRET_KEY is not set
     """
-    # Import here to avoid circular imports and ensure .env is loaded
-    from app.config import settings
-
-    secret_key = settings.secret_key
+    if secret_key is None:
+        # Import here to avoid circular imports and ensure .env is loaded
+        from app.config import settings
+        secret_key = settings.secret_key
+        if not secret_key:
+            raise ValueError(
+                "SECRET_KEY is required to encrypt/decrypt passwords. "
+                "Set it in .env or as an environment variable."
+            )
 
     # Derive a 32-byte key from SECRET_KEY using PBKDF2
     kdf = PBKDF2HMAC(
@@ -49,13 +57,14 @@ def _get_fernet() -> Fernet:
     return Fernet(key)
 
 
-def encrypt_password(password: str) -> str:
+def encrypt_password(password: str, secret_key: Optional[str] = None) -> str:
     """Encrypt a password for storage in connections.yaml.
 
     Use this to generate encrypted values for the password_encrypted field.
 
     Args:
         password: The plain text password to encrypt
+        secret_key: Explicit secret key. If None, loads from settings/.env.
 
     Returns:
         Encrypted password string to put in connections.yaml
@@ -65,7 +74,7 @@ def encrypt_password(password: str) -> str:
         >>> print(encrypt_password("my_secret_password"))
         gAAAAABl...
     """
-    fernet = _get_fernet()
+    fernet = _get_fernet(secret_key)
     return fernet.encrypt(password.encode()).decode()
 
 
