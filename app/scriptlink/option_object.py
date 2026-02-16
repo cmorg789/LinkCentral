@@ -191,11 +191,11 @@ class OptionObjectWrapper:
         """Track a field modification."""
         self._modified_fields.add((form_id, row_id, field_number))
 
-    def _capture_snapshot(self) -> Dict[str, Dict[str, Any]]:
+    def _capture_snapshot(self) -> Dict[Tuple[str, str, str], Dict[str, Any]]:
         """Capture current state of all fields for diff comparison.
 
         Returns:
-            Dict mapping field_number to {value, enabled, required, locked}
+            Dict mapping (form_id, row_id, field_number) to {value, enabled, required, locked}
         """
         snapshot = {}
 
@@ -205,7 +205,8 @@ class OptionObjectWrapper:
         for form in self._obj.Forms:
             if form.CurrentRow is not None and form.CurrentRow.Fields is not None:
                 for field in form.CurrentRow.Fields:
-                    snapshot[field.FieldNumber] = {
+                    key = (form.FormId, form.CurrentRow.RowId, field.FieldNumber)
+                    snapshot[key] = {
                         "value": field.FieldValue,
                         "enabled": field.Enabled,
                         "required": field.Required,
@@ -216,7 +217,8 @@ class OptionObjectWrapper:
                 for row in form.OtherRows:
                     if row.Fields is not None:
                         for field in row.Fields:
-                            snapshot[field.FieldNumber] = {
+                            key = (form.FormId, row.RowId, field.FieldNumber)
+                            snapshot[key] = {
                                 "value": field.FieldValue,
                                 "enabled": field.Enabled,
                                 "required": field.Required,
@@ -241,8 +243,8 @@ class OptionObjectWrapper:
         current = self._capture_snapshot()
 
         # Check all fields that existed initially
-        for field_number, old_state in self._initial_snapshot.items():
-            new_state = current.get(field_number, {})
+        for key, old_state in self._initial_snapshot.items():
+            new_state = current.get(key, {})
             field_changes = {}
 
             for prop in ["value", "enabled", "required", "locked"]:
@@ -252,6 +254,8 @@ class OptionObjectWrapper:
                     field_changes[prop] = {"old": old_val, "new": new_val}
 
             if field_changes:
+                # Use field_number as the display key
+                field_number = key[2]
                 diff[field_number] = field_changes
 
         return diff
