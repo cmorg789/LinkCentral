@@ -8,7 +8,7 @@
 #
 # To encrypt a password:
 #   python -m app.scriptlink encrypt-password
-#   python -m app.scriptlink encrypt-password --secret-key "your_key"  # If SECRET_KEY is not in .env
+#   python -m app.scriptlink encrypt-password --secret-key "your_key" # If SECRET_KEY is not in .env
 
 connections:
   AVATAR_DB:
