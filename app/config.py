@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     soap_path: str = "/ScriptLinkService.asmx"
+    service_name: str = "LinkCentral"
     debug: bool = False  # Enables auto-reload
     script_timeout: int = 30  # Max seconds for script execution
     script_error_blocking: bool = False # Should script errors block form?

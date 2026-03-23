@@ -346,7 +346,7 @@ def _build_minimal_response(obj: OptionObject2015) -> OptionObject2015:
 soap_application = Application(
     [ScriptLinkService],
     tns=TNS,
-    name="LinkCentral",
+    name=settings.service_name,
     in_protocol=Soap11(),
     out_protocol=Soap11(),
 )

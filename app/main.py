@@ -13,6 +13,20 @@ from app.soap.service import wsgi_application as soap_wsgi
 logging.basicConfig(level=logging.DEBUG if settings.debug else logging.INFO)
 
 
+def _proxy_prefix_middleware(app):
+    """WSGI middleware that sets SCRIPT_NAME from X-Forwarded-Prefix header.
+
+    When behind a reverse proxy that strips a path prefix (e.g. Caddy handle_path),
+    this ensures the WSDL soap:address includes the correct external path.
+    """
+    def middleware(environ, start_response):
+        prefix = environ.get("HTTP_X_FORWARDED_PREFIX", "")
+        if prefix:
+            environ["SCRIPT_NAME"] = prefix + environ.get("SCRIPT_NAME", "")
+        return app(environ, start_response)
+    return middleware
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
@@ -30,8 +44,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Mount SOAP service
-app.mount(settings.soap_path, WSGIMiddleware(soap_wsgi))
+# Mount SOAP service with proxy prefix support
+app.mount(settings.soap_path, WSGIMiddleware(_proxy_prefix_middleware(soap_wsgi)))
 
 
 @app.get("/")
