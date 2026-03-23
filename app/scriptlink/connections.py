@@ -1,10 +1,13 @@
 """Database connection configuration from YAML file."""
+import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import yaml
 
 from app.scriptlink.sql import SQLHelper
+
+logger = logging.getLogger(__name__)
 
 # Config file location
 CONFIG_DIR = Path(__file__).parent.parent.parent / "config"
@@ -43,6 +46,7 @@ def load_connections(force_reload: bool = False) -> Dict[str, Dict[str, Any]]:
         return _connections_cache
 
     if not CONNECTIONS_FILE.exists():
+        logger.warning("Connections file not found: %s", CONNECTIONS_FILE)
         _connections_cache = {}
         return _connections_cache
 
@@ -50,6 +54,7 @@ def load_connections(force_reload: bool = False) -> Dict[str, Dict[str, Any]]:
         data = yaml.safe_load(f) or {}
 
     _connections_cache = data.get("connections", {})
+    logger.info("Loaded %d connection(s) from %s", len(_connections_cache), CONNECTIONS_FILE)
     return _connections_cache
 
 
@@ -88,6 +93,7 @@ def reload_connections() -> None:
     for helper in _sql_helpers.values():
         helper._engine.dispose()
     _sql_helpers = {}
+    logger.info("Reloading connections from disk")
     load_connections(force_reload=True)
 
 
@@ -115,6 +121,9 @@ def get_connection(name: str) -> SQLHelper:
         return _sql_helpers[name]
 
     config = get_connection_config(name)
+    logger.info("Creating new connection: %s (%s://%s:%s/%s)",
+                name, config.get("driver"), config.get("host"),
+                config.get("port"), config.get("database"))
     helper = SQLHelper(config)
     _sql_helpers[name] = helper
     return helper

@@ -1,8 +1,11 @@
 """SQL helper for database operations in scripts."""
+import logging
 import ssl
 from typing import Any, Dict, List, Tuple
 
 from sqlalchemy import create_engine, text, URL
+
+logger = logging.getLogger(__name__)
 
 
 def _build_connection_url(
@@ -118,6 +121,7 @@ class SQLHelper:
                     Optional: ssl_mode, ssl_check_hostname
         """
         self._config = config
+        self._name = f"{config.get('driver')}://{config.get('host')}:{config.get('port')}/{config.get('database')}"
         self._engine = self._create_engine()
 
     def _create_engine(self):
@@ -157,6 +161,7 @@ class SQLHelper:
                 id="12345"
             )
         """
+        logger.debug("[%s] Query: %s | Params: %s", self._name, sql, params)
         with self._engine.connect() as conn:
             result = conn.execute(text(sql), params)
 
@@ -168,6 +173,7 @@ class SQLHelper:
                         break
                     rows.append(dict(zip(columns, row)))
 
+            logger.debug("[%s] Query returned %d row(s)", self._name, len(rows))
             return rows
 
     def scalar(self, sql: str, **params) -> Any:
@@ -183,6 +189,7 @@ class SQLHelper:
         Example:
             count = conn.scalar("SELECT COUNT(*) FROM patients")
         """
+        logger.debug("[%s] Scalar: %s | Params: %s", self._name, sql, params)
         with self._engine.connect() as conn:
             result = conn.execute(text(sql), params)
             row = result.fetchone()
@@ -205,7 +212,9 @@ class SQLHelper:
                 id="12345"
             )
         """
+        logger.debug("[%s] Execute: %s | Params: %s", self._name, sql, params)
         with self._engine.connect() as conn:
             result = conn.execute(text(sql), params)
             conn.commit()
+            logger.debug("[%s] Execute affected %d row(s)", self._name, result.rowcount)
             return result.rowcount
