@@ -10,7 +10,7 @@ from app.config import settings
 from app.db import init_db
 from app.soap.service import wsgi_application as soap_wsgi
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG if settings.debug else logging.INFO)
 
 
 @asynccontextmanager

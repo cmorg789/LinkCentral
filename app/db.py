@@ -1,4 +1,5 @@
 """Database models and connection management."""
+import logging
 import uuid
 from contextlib import contextmanager
 from datetime import datetime
@@ -8,6 +9,8 @@ from sqlalchemy import Column, DateTime, Index, Integer, String, Text, create_en
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 # Models
@@ -57,6 +60,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db() -> None:
     """Initialize database tables."""
+    logger.info("Initializing database: %s", settings.database_url)
     Base.metadata.create_all(bind=engine)
 
 
