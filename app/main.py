@@ -27,10 +27,13 @@ class ProxyPrefixMiddleware:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
         if scope["type"] in ("http", "websocket"):
-            for header_name, header_value in scope.get("headers", []):
-                if header_name == b"x-forwarded-prefix":
-                    scope["root_path"] = header_value.decode() + scope.get("root_path", "")
-                    break
+            headers = dict(scope.get("headers", []))
+            prefix = headers.get(b"x-forwarded-prefix")
+            if prefix:
+                scope["root_path"] = prefix.decode() + scope.get("root_path", "")
+                logging.getLogger(__name__).debug(
+                    "X-Forwarded-Prefix: %s -> root_path: %s", prefix.decode(), scope["root_path"]
+                )
         await self.app(scope, receive, send)
 
 
@@ -44,20 +47,21 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(
+_app = FastAPI(
     title="LinkCentral",
     description="SOAP middleware for Netsmart myAvatar ScriptLink",
     version=__version__,
     lifespan=lifespan,
 )
 
-app.add_middleware(ProxyPrefixMiddleware)
-
 # Mount SOAP service
-app.mount(settings.soap_path, WSGIMiddleware(soap_wsgi))
+_app.mount(settings.soap_path, WSGIMiddleware(soap_wsgi))
+
+# Wrap the entire ASGI app so root_path is set before FastAPI routing
+app = ProxyPrefixMiddleware(_app)
 
 
-@app.get("/")
+@_app.get("/")
 async def root():
     """Root endpoint with service info."""
     return {
@@ -68,7 +72,7 @@ async def root():
     }
 
 
-@app.get("/health")
+@_app.get("/health")
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "version": __version__}
