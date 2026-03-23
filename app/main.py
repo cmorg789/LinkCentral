@@ -3,7 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from starlette.middleware.wsgi import WSGIMiddleware
+from a2wsgi import WSGIMiddleware
 
 from app import __version__
 from app.config import settings
