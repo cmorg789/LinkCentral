@@ -352,4 +352,25 @@ soap_application = Application(
 )
 
 # Create WSGI application
-wsgi_application = WsgiApplication(soap_application)
+class _ProxyAwareWsgiApplication(WsgiApplication):
+    """WsgiApplication that rebuilds the WSDL when behind a reverse proxy.
+
+    Spyne caches the WSDL after the first request, baking in the URL.
+    When behind a proxy, different clients may reach the service via different
+    addresses, so we rebuild the WSDL if the URL changes.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._wsdl_url = None
+
+    def handle_wsdl_request(self, req_env, start_response, url):
+        if self._wsdl_url != url:
+            logger.info("WSDL address: %s", url)
+            # URL changed (different proxy path, host, etc.) — rebuild
+            self._wsdl = None
+            self._wsdl_url = url
+        return super().handle_wsdl_request(req_env, start_response, url)
+
+
+wsgi_application = _ProxyAwareWsgiApplication(soap_application)
