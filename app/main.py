@@ -12,14 +12,20 @@ from app.db import init_db
 from app.soap.service import wsgi_application as soap_wsgi
 
 logging.basicConfig(level=logging.DEBUG if settings.debug else logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Header name for proxy prefix
+_PREFIX_HEADER = b"x-forwarded-prefix"
 
 
 class ProxyPrefixMiddleware:
     """ASGI middleware that sets root_path from X-Forwarded-Prefix header.
 
     When behind a reverse proxy that strips a path prefix (e.g. Caddy handle_path),
-    this ensures FastAPI redirects and the WSDL soap:address include the correct
-    external path.
+    this ensures FastAPI redirects include the correct external path.
+
+    The WSDL soap:address is handled separately by _wsgi_proxy_prefix since
+    a2wsgi already translates root_path into SCRIPT_NAME for the mounted WSGI app.
     """
 
     def __init__(self, app: ASGIApp):
@@ -28,12 +34,11 @@ class ProxyPrefixMiddleware:
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
         if scope["type"] in ("http", "websocket"):
             headers = dict(scope.get("headers", []))
-            prefix = headers.get(b"x-forwarded-prefix")
+            prefix = headers.get(_PREFIX_HEADER)
             if prefix:
                 scope["root_path"] = prefix.decode() + scope.get("root_path", "")
-                logging.getLogger(__name__).debug(
-                    "X-Forwarded-Prefix: %s -> root_path: %s", prefix.decode(), scope["root_path"]
-                )
+                logger.debug("X-Forwarded-Prefix: %s -> root_path: %s",
+                             prefix.decode(), scope["root_path"])
         await self.app(scope, receive, send)
 
 
