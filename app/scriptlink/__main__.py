@@ -2,10 +2,8 @@
 
 Usage:
     python -m app.scriptlink test PARAM fixture.json [--verbose]
-    python -m app.scriptlink encrypt-password [--secret-key KEY]
 """
 import argparse
-import getpass
 import sys
 
 from app.scriptlink.test import main as run_test
@@ -38,15 +36,6 @@ def main():
         "-v", "--verbose", action="store_true", help="Show script print() output"
     )
 
-    # encrypt-password
-    ep_parser = subparsers.add_parser(
-        "encrypt-password", help="Encrypt a password for connections.yaml"
-    )
-    ep_parser.add_argument(
-        "--secret-key",
-        help="SECRET_KEY to use for encryption (if not set in .env or environment)",
-    )
-
     args = parser.parse_args()
 
     if args.command is None:
@@ -55,31 +44,6 @@ def main():
 
     if args.command == "test":
         run_test(args)
-    elif args.command == "encrypt-password":
-        encrypt_password(args)
-
-
-def encrypt_password(args):
-    from app.scriptlink.connections import encrypt_password as _encrypt
-
-    password = getpass.getpass("Password to encrypt: ")
-    if not password:
-        print("Error: Password cannot be empty.", file=sys.stderr)
-        sys.exit(1)
-
-    try:
-        encrypted = _encrypt(password, secret_key=args.secret_key)
-    except Exception as e:
-        print(
-            f"Error: {e}\n"
-            "Use --secret-key to provide it directly:\n"
-            "  python -m app.scriptlink encrypt-password --secret-key YOUR_KEY",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    print(f"\nEncrypted password:\n{encrypted}")
-    print("\nAdd this to connections.yaml as password_encrypted.")
 
 
 if __name__ == "__main__":

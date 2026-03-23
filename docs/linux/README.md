@@ -26,7 +26,6 @@ LinkCentral can run as a systemd service on Linux.
    RestartSec=5
 
    # Environment variables (or use .env file in WorkingDirectory)
-   # Environment=SECRET_KEY=your_secret_key_here  # Only needed if using password_encrypted
    Environment=HOST=0.0.0.0
    Environment=PORT=8000
 

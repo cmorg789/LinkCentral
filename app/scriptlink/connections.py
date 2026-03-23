@@ -1,13 +1,8 @@
 """Database connection configuration from YAML file."""
-import base64
-import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import yaml
-from cryptography.fernet import Fernet, InvalidToken
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from app.scriptlink.sql import SQLHelper
 
@@ -21,92 +16,9 @@ _connections_cache: Optional[Dict[str, Dict[str, Any]]] = None
 # Cached SQLHelper instances
 _sql_helpers: Dict[str, SQLHelper] = {}
 
-# Fixed salt for key derivation (not secret, just ensures consistent key derivation)
-_KEY_SALT = b"linkcentral_connections_v1"
-
-
-def _get_fernet(secret_key: Optional[str] = None) -> Fernet:
-    """Get a Fernet instance using SECRET_KEY.
-
-    Derives a proper Fernet key from the SECRET_KEY using PBKDF2.
-
-    Args:
-        secret_key: Explicit secret key. If None, loads from settings.
-
-    Raises:
-        ValueError: If SECRET_KEY is not set
-    """
-    if secret_key is None:
-        # Import here to avoid circular imports and ensure .env is loaded
-        from app.config import settings
-        secret_key = settings.secret_key
-        if not secret_key:
-            raise ValueError(
-                "SECRET_KEY is required to encrypt/decrypt passwords. "
-                "Set it in .env or as an environment variable."
-            )
-
-    # Derive a 32-byte key from SECRET_KEY using PBKDF2
-    kdf = PBKDF2HMAC(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=_KEY_SALT,
-        iterations=100_000,
-    )
-    key = base64.urlsafe_b64encode(kdf.derive(secret_key.encode()))
-    return Fernet(key)
-
-
-def encrypt_password(password: str, secret_key: Optional[str] = None) -> str:
-    """Encrypt a password for storage in connections.yaml.
-
-    Use this to generate encrypted values for the password_encrypted field.
-
-    Args:
-        password: The plain text password to encrypt
-        secret_key: Explicit secret key. If None, loads from settings/.env.
-
-    Returns:
-        Encrypted password string to put in connections.yaml
-
-    Example:
-        >>> from app.scriptlink.connections import encrypt_password
-        >>> print(encrypt_password("my_secret_password"))
-        gAAAAABl...
-    """
-    fernet = _get_fernet(secret_key)
-    return fernet.encrypt(password.encode()).decode()
-
-
-def _decrypt_password(encrypted: str) -> str:
-    """Decrypt an encrypted password from connections.yaml.
-
-    Args:
-        encrypted: The encrypted password string
-
-    Returns:
-        Decrypted plain text password
-
-    Raises:
-        ValueError: If decryption fails (wrong key or corrupted data)
-    """
-    try:
-        fernet = _get_fernet()
-        return fernet.decrypt(encrypted.encode()).decode()
-    except InvalidToken:
-        raise ValueError(
-            "Failed to decrypt password. Check that SECRET_KEY matches "
-            "the key used to encrypt the password."
-        )
-
 
 def load_connections(force_reload: bool = False) -> Dict[str, Dict[str, Any]]:
     """Load database connections from config/connections.yaml.
-
-    Connection passwords can be specified in three ways (in order of preference):
-    1. `password_encrypted` - Encrypted password (recommended)
-    2. `password_env` - Environment variable containing the password
-    3. `password` - Plain text password (not recommended)
 
     Args:
         force_reload: If True, reload from disk even if cached
@@ -122,16 +34,8 @@ def load_connections(force_reload: bool = False) -> Dict[str, Dict[str, Any]]:
             port: 1433
             database: myavatar
             username: scriptlink_user
-            password_encrypted: gAAAAABl...  # Encrypted with SECRET_KEY
+            password: my_password
             ssl_mode: disabled
-
-          AnotherDB:
-            driver: postgresql
-            host: localhost
-            port: 5432
-            database: local
-            username: admin
-            password_env: ANOTHER_DB_PASSWORD  # From environment variable
     """
     global _connections_cache
 
@@ -145,24 +49,8 @@ def load_connections(force_reload: bool = False) -> Dict[str, Dict[str, Any]]:
     with open(CONNECTIONS_FILE, "r") as f:
         data = yaml.safe_load(f) or {}
 
-    connections = data.get("connections", {})
-
-    # Resolve password references (encrypted takes precedence)
-    for name, config in connections.items():
-        if "password_encrypted" in config:
-            # Decrypt the password
-            config["password"] = _decrypt_password(config["password_encrypted"])
-            del config["password_encrypted"]
-            # Remove password_env if also present (encrypted takes precedence)
-            config.pop("password_env", None)
-        elif "password_env" in config:
-            # Fall back to environment variable
-            env_var = config["password_env"]
-            config["password"] = os.getenv(env_var, "")
-            del config["password_env"]
-
-    _connections_cache = connections
-    return connections
+    _connections_cache = data.get("connections", {})
+    return _connections_cache
 
 
 def get_connection_config(name: str) -> Dict[str, Any]:

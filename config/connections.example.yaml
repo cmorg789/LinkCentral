@@ -1,14 +1,5 @@
 # Database Connections Configuration
 # Copy this file to connections.yaml and configure your connections.
-#
-# Password options (in order of preference):
-#   password_encrypted: Encrypted password (recommended)
-#   password_env: Environment variable containing the password
-#   password: Plain text password (not recommended)
-#
-# To encrypt a password:
-#   python -m app.scriptlink encrypt-password
-#   python -m app.scriptlink encrypt-password --secret-key "your_key" # If SECRET_KEY is not in .env
 
 connections:
   AVATAR_DB:
@@ -17,7 +8,7 @@ connections:
     port: 1972
     database: AVPM
     username: LIVE:scriptlink_user
-    password_encrypted: gAAAAABl...  # Run encrypt_password() to generate this
+    password: your_password_here
     ssl_mode: cert_none  # Options: disabled, cert_none, cert_optional, cert_required
 
   # Example: PostgreSQL connection
@@ -27,7 +18,7 @@ connections:
   #   port: 5432
   #   database: reports
   #   username: readonly_user
-  #   password_env: REPORTS_PASSWORD
+  #   password: your_password_here
   #   ssl_mode: cert_required
   #   ssl_check_hostname: true
 
@@ -38,7 +29,7 @@ connections:
   #   port: 3306
   #   database: mydb
   #   username: app_user
-  #   password_env: MYSQL_PASSWORD
+  #   password: your_password_here
 
 # Supported drivers: mssql, postgresql, iris, mysql
 # SSL modes: disabled, cert_none, cert_optional, cert_required

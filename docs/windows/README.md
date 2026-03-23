@@ -29,7 +29,6 @@ LinkCentral can run as a Windows service using [WinSW](https://github.com/winsw/
 Environment variables can be set in the service XML or in a `.env` file. Uncomment the `<env>` block in the XML to use service-level environment variables:
 
 ```xml
-<!-- <env name="SECRET_KEY" value="your_secret_key_here"/> -->  <!-- Only needed if using password_encrypted -->
 <env name="HOST" value="0.0.0.0"/>
 <env name="PORT" value="8000"/>
 ```

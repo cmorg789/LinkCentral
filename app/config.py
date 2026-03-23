@@ -1,5 +1,4 @@
 """Application configuration."""
-from typing import Optional
 from pydantic_settings import BaseSettings
 from pathlib import Path
 
@@ -17,9 +16,6 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "sqlite:///data/scriptlink.db"
-
-    # Security - only required if using password_encrypted in connections.yaml
-    secret_key: Optional[str] = None
 
     # Logging cleanup
     cleanup_interval_minutes: int = 0  # How often to check for old logs

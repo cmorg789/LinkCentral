@@ -181,33 +181,16 @@ connections:
     port: 1972
     database: AVPM
     username: LIVE:scriptlink_user
-    password_encrypted: gAAAAABl...
+    password: your_password_here
     ssl_mode: disabled
 ```
 
 **Supported drivers:** `mssql`, `postgresql`, `iris`, `mysql`
 
-**Password options** (in order of preference):
-
-1. `password_encrypted` -- Fernet encrypted (recommended)
-2. `password_env` -- Environment variable name
-3. `password` -- Plain text (not recommended)
-
-**Encrypt a password:**
-
-```bash
-# If SECRET_KEY is in .env or environment
-python -m app.scriptlink encrypt-password
-
-# If SECRET_KEY is only in the service XML
-python -m app.scriptlink encrypt-password --secret-key "your_secret_key"
-```
-
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SECRET_KEY` | *(none)* | 32+ char key for password encryption (required if using `password_encrypted`) |
 | `HOST` | `0.0.0.0` | Server bind address |
 | `PORT` | `8000` | Server port |
 | `SOAP_PATH` | `/ScriptLinkService.asmx` | SOAP endpoint path |

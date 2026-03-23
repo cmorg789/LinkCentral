@@ -8,8 +8,7 @@
   <workingdirectory>%BASE%</workingdirectory>
 
   <!-- Environment variables (Uncomment if using this instead of .env) -->
-  <!-- <env name="SECRET_KEY" value="CHANGE_ME"/>
-    <env name="HOST" value="0.0.0.0"/>
+  <!-- <env name="HOST" value="0.0.0.0"/>
     <env name="PORT" value="8080"/>
     <env name="SOAP_PATH" value="/ScriptLinkService.asmx"/>
     <env name="DATABASE_URL" value="sqlite:///data/scriptlink.db"/> -->
