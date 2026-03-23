@@ -365,9 +365,9 @@ class _ProxyAwareWsgiApplication(WsgiApplication):
         self._wsdl_url = None
 
     def handle_wsdl_request(self, req_env, start_response, url):
+        logger.debug("WSDL request: url=%s, cached_url=%s", url, self._wsdl_url)
         if self._wsdl_url != url:
-            logger.info("WSDL address: %s", url)
-            # URL changed (different proxy path, host, etc.) — rebuild
+            logger.info("WSDL address changed: %s -> %s", self._wsdl_url, url)
             self._wsdl = None
             self._wsdl_url = url
         return super().handle_wsdl_request(req_env, start_response, url)
