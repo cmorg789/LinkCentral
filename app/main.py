@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from a2wsgi import WSGIMiddleware
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app import __version__
 from app.config import settings
@@ -13,18 +14,24 @@ from app.soap.service import wsgi_application as soap_wsgi
 logging.basicConfig(level=logging.DEBUG if settings.debug else logging.INFO)
 
 
-def _proxy_prefix_middleware(app):
-    """WSGI middleware that sets SCRIPT_NAME from X-Forwarded-Prefix header.
+class ProxyPrefixMiddleware:
+    """ASGI middleware that sets root_path from X-Forwarded-Prefix header.
 
     When behind a reverse proxy that strips a path prefix (e.g. Caddy handle_path),
-    this ensures the WSDL soap:address includes the correct external path.
+    this ensures FastAPI redirects and the WSDL soap:address include the correct
+    external path.
     """
-    def middleware(environ, start_response):
-        prefix = environ.get("HTTP_X_FORWARDED_PREFIX", "")
-        if prefix:
-            environ["SCRIPT_NAME"] = prefix + environ.get("SCRIPT_NAME", "")
-        return app(environ, start_response)
-    return middleware
+
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        if scope["type"] in ("http", "websocket"):
+            for header_name, header_value in scope.get("headers", []):
+                if header_name == b"x-forwarded-prefix":
+                    scope["root_path"] = header_value.decode() + scope.get("root_path", "")
+                    break
+        await self.app(scope, receive, send)
 
 
 @asynccontextmanager
@@ -44,8 +51,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Mount SOAP service with proxy prefix support
-app.mount(settings.soap_path, WSGIMiddleware(_proxy_prefix_middleware(soap_wsgi)))
+app.add_middleware(ProxyPrefixMiddleware)
+
+# Mount SOAP service
+app.mount(settings.soap_path, WSGIMiddleware(soap_wsgi))
 
 
 @app.get("/")
