@@ -14,18 +14,12 @@ from app.soap.service import wsgi_application as soap_wsgi
 logging.basicConfig(level=logging.DEBUG if settings.debug else logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Header name for proxy prefix
-_PREFIX_HEADER = b"x-forwarded-prefix"
-
 
 class ProxyPrefixMiddleware:
     """ASGI middleware that sets root_path from X-Forwarded-Prefix header.
 
     When behind a reverse proxy that strips a path prefix (e.g. Caddy handle_path),
     this ensures FastAPI redirects include the correct external path.
-
-    The WSDL soap:address is handled separately by _wsgi_proxy_prefix since
-    a2wsgi already translates root_path into SCRIPT_NAME for the mounted WSGI app.
     """
 
     def __init__(self, app: ASGIApp):
@@ -34,12 +28,43 @@ class ProxyPrefixMiddleware:
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
         if scope["type"] in ("http", "websocket"):
             headers = dict(scope.get("headers", []))
-            prefix = headers.get(_PREFIX_HEADER)
+            prefix = headers.get(b"x-forwarded-prefix")
             if prefix:
                 scope["root_path"] = prefix.decode() + scope.get("root_path", "")
                 logger.debug("X-Forwarded-Prefix: %s -> root_path: %s",
                              prefix.decode(), scope["root_path"])
         await self.app(scope, receive, send)
+
+
+class StripRootPathMiddleware:
+    """ASGI middleware that clears root_path before the WSGI translation layer.
+
+    a2wsgi translates root_path into SCRIPT_NAME, but Spyne also appends
+    PATH_INFO which already contains the service path — causing duplication.
+    This clears root_path so a2wsgi leaves SCRIPT_NAME alone.
+    """
+
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        if scope["type"] in ("http", "websocket"):
+            scope["root_path"] = ""
+        await self.app(scope, receive, send)
+
+
+def _wsgi_proxy_prefix(app):
+    """WSGI middleware that sets SCRIPT_NAME from X-Forwarded-Prefix header.
+
+    Reads the proxy prefix directly from the HTTP header and prepends it to
+    SCRIPT_NAME so Spyne generates the correct WSDL soap:address.
+    """
+    def middleware(environ, start_response):
+        prefix = environ.get("HTTP_X_FORWARDED_PREFIX", "")
+        if prefix:
+            environ["SCRIPT_NAME"] = prefix + environ.get("SCRIPT_NAME", "")
+        return app(environ, start_response)
+    return middleware
 
 
 @asynccontextmanager
@@ -59,8 +84,13 @@ _app = FastAPI(
     lifespan=lifespan,
 )
 
-# Mount SOAP service
-_app.mount(settings.soap_path, WSGIMiddleware(soap_wsgi))
+# Mount SOAP service:
+# StripRootPathMiddleware prevents a2wsgi from translating root_path into SCRIPT_NAME
+# _wsgi_proxy_prefix reads X-Forwarded-Prefix directly and sets SCRIPT_NAME once
+_app.mount(
+    settings.soap_path,
+    StripRootPathMiddleware(WSGIMiddleware(_wsgi_proxy_prefix(soap_wsgi))),
+)
 
 # Wrap the entire ASGI app so root_path is set before FastAPI routing
 app = ProxyPrefixMiddleware(_app)
