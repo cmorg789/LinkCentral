@@ -31,8 +31,6 @@ class ProxyPrefixMiddleware:
             prefix = headers.get(b"x-forwarded-prefix")
             if prefix:
                 scope["root_path"] = prefix.decode() + scope.get("root_path", "")
-                logger.debug("X-Forwarded-Prefix: %s -> root_path: %s",
-                             prefix.decode(), scope["root_path"])
         await self.app(scope, receive, send)
 
 
