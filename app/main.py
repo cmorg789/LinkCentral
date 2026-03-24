@@ -12,26 +12,6 @@ from app.db import init_db
 from app.soap.service import wsgi_application as soap_wsgi
 
 logging.basicConfig(level=logging.DEBUG if settings.debug else logging.INFO)
-logger = logging.getLogger(__name__)
-
-
-class ProxyPrefixMiddleware:
-    """ASGI middleware that sets root_path from X-Forwarded-Prefix header.
-
-    When behind a reverse proxy that strips a path prefix (e.g. Caddy handle_path),
-    this ensures FastAPI redirects include the correct external path.
-    """
-
-    def __init__(self, app: ASGIApp):
-        self.app = app
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send):
-        if scope["type"] in ("http", "websocket"):
-            headers = dict(scope.get("headers", []))
-            prefix = headers.get(b"x-forwarded-prefix")
-            if prefix:
-                scope["root_path"] = prefix.decode() + scope.get("root_path", "")
-        await self.app(scope, receive, send)
 
 
 class StripRootPathMiddleware:
@@ -75,7 +55,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-_app = FastAPI(
+app = FastAPI(
     title="LinkCentral",
     description="SOAP middleware for Netsmart myAvatar ScriptLink",
     version=__version__,
@@ -85,16 +65,13 @@ _app = FastAPI(
 # Mount SOAP service:
 # StripRootPathMiddleware prevents a2wsgi from translating root_path into SCRIPT_NAME
 # _wsgi_proxy_prefix reads X-Forwarded-Prefix directly and sets SCRIPT_NAME once
-_app.mount(
+app.mount(
     settings.soap_path,
     StripRootPathMiddleware(WSGIMiddleware(_wsgi_proxy_prefix(soap_wsgi))),
 )
 
-# Wrap the entire ASGI app so root_path is set before FastAPI routing
-app = ProxyPrefixMiddleware(_app)
 
-
-@_app.get("/")
+@app.get("/")
 async def root():
     """Root endpoint with service info."""
     return {
@@ -105,7 +82,7 @@ async def root():
     }
 
 
-@_app.get("/health")
+@app.get("/health")
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "version": __version__}
