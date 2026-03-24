@@ -27,11 +27,6 @@ cp .env.example .env
 # Edit .env -- see Environment Variables below for options
 ```
 
-If using `password_encrypted` in `connections.yaml`, set `SECRET_KEY` (minimum 32 characters):
-```bash
-# Generate one with: python -c "import secrets; print(secrets.token_urlsafe(32))"
-```
-
 ### 3. Run the Server
 
 ```bash
