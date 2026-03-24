@@ -37,18 +37,27 @@ Each instance has its own `config/`, `data/`, `scripts/`, and `.env`, so they ar
 ```caddyfile
 your.server.ip {
     tls internal
+    log
 
     handle_path /uat/* {
-        reverse_proxy localhost:8001
+        reverse_proxy localhost:8001 {
+            header_up X-Forwarded-Prefix /uat
+            header_up Host {host}
+        }
     }
 
     handle_path /prod/* {
-        reverse_proxy localhost:8000
+        reverse_proxy localhost:8000 {
+            header_up X-Forwarded-Prefix /prod
+            header_up Host {host}
+        }
     }
 }
 ```
 
 `handle_path` strips the prefix before proxying, so `/uat/ScriptLinkService.asmx` arrives at the UAT instance as `/ScriptLinkService.asmx`.
+
+The `X-Forwarded-Prefix` header tells LinkCentral which path prefix to include in the WSDL `soap:address`, so myAvatar sends subsequent requests through Caddy. The `Host` header ensures the WSDL uses the correct server IP.
 
 ## Service XMLs
 
