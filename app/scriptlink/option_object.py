@@ -359,6 +359,14 @@ class OptionObjectWrapper:
         self._obj.ErrorCode = ErrorCodes.OPEN_FORM
         self._obj.ErrorMesg = form_id
 
+    def no_changes(self) -> OptionObject2015:
+        """Return a response with no modifications.
+
+        Discards any tracked field changes and returns empty forms.
+        """
+        self._modified_fields.clear()
+        return self.build_response()
+
     # Response building
     def build_response(self) -> OptionObject2015:
         """Build minimal response with only modified forms/rows/fields.
