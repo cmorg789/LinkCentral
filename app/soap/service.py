@@ -368,7 +368,11 @@ class _ProxyAwareWsgiApplication(WsgiApplication):
         logger.debug("WSDL request: url=%s, cached_url=%s", url, self._wsdl_url)
         if self._wsdl_url != url:
             logger.info("WSDL address changed: %s -> %s", self._wsdl_url, url)
+            # Clear both the wsgi-level cache and the wsdl11 internal cache
+            # so build_interface_document is called with the new URL
             self._wsdl = None
+            self.doc.wsdl11.build_interface_document(url)
+            self._wsdl = self.doc.wsdl11.get_interface_document()
             self._wsdl_url = url
         return super().handle_wsdl_request(req_env, start_response, url)
 
