@@ -155,6 +155,72 @@ class FieldAccessor:
         return self._find_field(field_number) is not None
 
 
+class RowWrapper:
+    """Wrapper for a single row with dict-like field access.
+
+    Example:
+        rows = wrapper.get_rows("145")
+        for row in rows:
+            value = row.get("1266.66", "")
+            row["1266.66"] = "Updated"
+            row["1266.66"].required = True
+    """
+
+    def __init__(
+        self,
+        row_obj: RowObject,
+        form_id: str,
+        tracker: "OptionObjectWrapper",
+    ):
+        self._row = row_obj
+        self._form_id = form_id
+        self._tracker = tracker
+
+    @property
+    def row_id(self) -> str:
+        """The RowId of this row."""
+        return self._row.RowId
+
+    @property
+    def row_action(self) -> Optional[str]:
+        """The RowAction of this row (e.g., 'ADD', 'EDIT', 'DELETE')."""
+        return self._row.RowAction
+
+    def _find_field(self, field_number: str) -> Optional[FieldObject]:
+        """Find a field in this row by field number."""
+        if self._row.Fields is not None:
+            for field in self._row.Fields:
+                if field.FieldNumber == field_number:
+                    return field
+        return None
+
+    def __getitem__(self, field_number: str) -> FieldWrapper:
+        """Get a field wrapper by field number. Raises KeyError if not found."""
+        field = self._find_field(field_number)
+        if field is None:
+            raise KeyError(f"Field {field_number} not found in row {self._row.RowId}")
+        return FieldWrapper(field, self._form_id, self._row.RowId, self._tracker)
+
+    def __setitem__(self, field_number: str, value: str) -> None:
+        """Set a field value by field number. Raises KeyError if not found."""
+        field = self._find_field(field_number)
+        if field is None:
+            raise KeyError(f"Field {field_number} not found in row {self._row.RowId}")
+        field.FieldValue = value
+        self._tracker._mark_modified(self._form_id, self._row.RowId, field_number)
+
+    def get(self, field_number: str, default: str = "") -> str:
+        """Get a field value with default if not found."""
+        field = self._find_field(field_number)
+        if field is None:
+            return default
+        return field.FieldValue if field.FieldValue is not None else default
+
+    def __contains__(self, field_number: str) -> bool:
+        """Check if a field exists in this row."""
+        return self._find_field(field_number) is not None
+
+
 class OptionObjectWrapper:
     """Pythonic wrapper for OptionObject2015 with change tracking and diff support.
 
@@ -230,16 +296,22 @@ class OptionObjectWrapper:
 
         return snapshot
 
-    def get_diff(self) -> Dict[str, Dict[str, Any]]:
+    def get_diff(self) -> Dict[str, Any]:
         """Get differences between initial and current state.
 
         Returns:
-            Dict mapping field_number to changes:
+            Dict with field changes and row operations:
             {
                 "123.45": {
                     "value": {"old": "foo", "new": "bar"},
                     "required": {"old": "0", "new": "1"}
-                }
+                },
+                "added_rows": [
+                    {"form_id": "145", "row_id": "145||1", "values": {"145.01": "val"}}
+                ],
+                "deleted_rows": [
+                    {"form_id": "145", "row_id": "145||3"}
+                ]
             }
         """
         diff = {}
@@ -260,6 +332,27 @@ class OptionObjectWrapper:
                 # Use field_number as the display key
                 field_number = key[2]
                 diff[field_number] = field_changes
+
+        # Include row operations
+        if self._added_rows:
+            added = []
+            for form_id, row in self._added_rows:
+                row_info: Dict[str, Any] = {"form_id": form_id, "row_id": row.RowId}
+                values = {}
+                if row.Fields:
+                    for field in row.Fields:
+                        if field.FieldValue:
+                            values[field.FieldNumber] = field.FieldValue
+                if values:
+                    row_info["values"] = values
+                added.append(row_info)
+            diff["added_rows"] = added
+
+        if self._deleted_row_ids:
+            diff["deleted_rows"] = [
+                {"form_id": form_id, "row_id": row_id}
+                for form_id, row_id in self._deleted_row_ids
+            ]
 
         return diff
 
@@ -362,6 +455,58 @@ class OptionObjectWrapper:
         self._obj.ErrorCode = ErrorCodes.OPEN_FORM
         self._obj.ErrorMesg = form_id
 
+    # Form introspection
+    def has_form(self, form_id: str) -> bool:
+        """Check if a form exists in the OptionObject."""
+        return self._find_form(form_id) is not None
+
+    def get_form_ids(self) -> List[str]:
+        """Get list of all form IDs in the OptionObject."""
+        if self._obj.Forms is None:
+            return []
+        return [form.FormId for form in self._obj.Forms]
+
+    def is_multiple_iteration(self, form_id: str) -> bool:
+        """Check if a form is a multiple iteration (MI) form.
+
+        Raises:
+            ValueError: If form not found
+        """
+        form = self._find_form(form_id)
+        if form is None:
+            raise ValueError(f"Form {form_id} not found")
+        return bool(form.MultipleIteration)
+
+    def row_count(self, form_id: str) -> int:
+        """Get the number of rows in a form.
+
+        Counts CurrentRow + OtherRows.
+
+        Raises:
+            ValueError: If form not found
+        """
+        form = self._find_form(form_id)
+        if form is None:
+            raise ValueError(f"Form {form_id} not found")
+        return sum(1 for _ in self._iter_form_rows(form))
+
+    def get_rows(self, form_id: str) -> List[RowWrapper]:
+        """Get all rows for a form as RowWrapper objects.
+
+        Returns rows in order: CurrentRow first, then OtherRows.
+        Returns empty list if form not found or has no rows.
+
+        Example:
+            rows = option_object.get_rows("145")
+            for row in rows:
+                diagnosis = row.get("200.01", "")
+                print(f"Row {row.row_id}: {diagnosis}")
+        """
+        form = self._find_form(form_id)
+        if form is None:
+            return []
+        return [RowWrapper(row, form_id, self) for row in self._iter_form_rows(form)]
+
     # Row operations (for multiple iteration forms)
     def add_row(self, form_id: str, values: Dict[str, str] = None,
                 fields: List[str] = None) -> None:
@@ -387,8 +532,16 @@ class OptionObjectWrapper:
         """
         form = self._find_form(form_id)
         if form is None:
-            available = [f.FormId for f in (self._obj.Forms or [])]
-            raise ValueError(f"Form {form_id} not found. Available forms: {available}")
+            if fields is not None:
+                # Auto-create MI form (myAvatar doesn't send empty MI tables)
+                self.ensure_form(form_id)
+                form = self._find_form(form_id)
+            else:
+                available = [f.FormId for f in (self._obj.Forms or [])]
+                raise ValueError(
+                    f"Form {form_id} not found (available: {available}). "
+                    f"Pass fields=[...] to auto-create the form for empty MI tables."
+                )
 
         # ParentRowId must be the CurrentRow.RowId of the parent (first) form,
         # not the MI form itself. The first form is always the parent.
@@ -466,6 +619,32 @@ class OptionObjectWrapper:
             if form.FormId == form_id:
                 return form
         return None
+
+    def ensure_form(self, form_id: str, multiple_iteration: bool = True) -> None:
+        """Ensure a form exists in the OptionObject, creating it if missing.
+
+        myAvatar does not send MI forms when the table is empty. Call this
+        before add_row if you need to handle empty tables, or let add_row
+        call it automatically when ``fields`` is provided.
+
+        No-op if the form already exists.
+
+        Args:
+            form_id: The FormId to ensure exists
+            multiple_iteration: Whether the form is MI (default True)
+        """
+        if self._find_form(form_id) is not None:
+            return
+
+        form = FormObject()
+        form.FormId = form_id
+        form.MultipleIteration = multiple_iteration
+        form.CurrentRow = None
+        form.OtherRows = []
+
+        if self._obj.Forms is None:
+            self._obj.Forms = []
+        self._obj.Forms.append(form)
 
     def _get_parent_row_id(self, mi_form_id: str) -> str:
         """Get the ParentRowId for a new row on an MI form.
@@ -670,6 +849,8 @@ class OptionObjectWrapper:
         """Return dict of all changes for debugging/logging."""
         return {
             "modified_fields": [list(f) for f in self._modified_fields],
+            "added_rows": [(fid, row.RowId) for fid, row in self._added_rows],
+            "deleted_rows": [list(d) for d in self._deleted_row_ids],
             "error_code": self._obj.ErrorCode,
             "error_message": self._obj.ErrorMesg,
         }

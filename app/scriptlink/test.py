@@ -189,14 +189,42 @@ def format_output(result: TestResult, verbose: bool = False) -> str:
 
     # Diff
     if result.diff:
-        lines.append(f"Changes ({len(result.diff)} field{'s' if len(result.diff) != 1 else ''}):")
-        for field_num, changes in result.diff.items():
-            lines.append(f"  {field_num}:")
-            for prop, vals in changes.items():
-                old = vals.get("old", "")
-                new = vals.get("new", "")
-                lines.append(f"    {prop}: {repr(old)} -> {repr(new)}")
-        lines.append("")
+        # Field changes (skip row operation keys)
+        field_changes = {
+            k: v for k, v in result.diff.items()
+            if k not in ("added_rows", "deleted_rows")
+        }
+        if field_changes:
+            lines.append(f"Changes ({len(field_changes)} field{'s' if len(field_changes) != 1 else ''}):")
+            for field_num, changes in field_changes.items():
+                lines.append(f"  {field_num}:")
+                for prop, vals in changes.items():
+                    old = vals.get("old", "")
+                    new = vals.get("new", "")
+                    lines.append(f"    {prop}: {repr(old)} -> {repr(new)}")
+            lines.append("")
+
+        # Added rows
+        added_rows = result.diff.get("added_rows", [])
+        if added_rows:
+            lines.append(f"Added rows ({len(added_rows)}):")
+            for row_info in added_rows:
+                lines.append(f"  Form {row_info['form_id']}, RowId {row_info['row_id']}:")
+                for field_num, value in row_info.get("values", {}).items():
+                    lines.append(f"    {field_num}: {repr(value)}")
+            lines.append("")
+
+        # Deleted rows
+        deleted_rows = result.diff.get("deleted_rows", [])
+        if deleted_rows:
+            lines.append(f"Deleted rows ({len(deleted_rows)}):")
+            for row_info in deleted_rows:
+                lines.append(f"  Form {row_info['form_id']}, RowId {row_info['row_id']}")
+            lines.append("")
+
+        if not field_changes and not added_rows and not deleted_rows:
+            lines.append("No field changes.")
+            lines.append("")
     elif result.success:
         lines.append("No field changes.")
         lines.append("")
