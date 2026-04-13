@@ -114,6 +114,21 @@ entity_id = option_object.entity_id
 facility = option_object.facility
 ```
 
+### Row Operations (Multiple Iteration Forms)
+
+Add or delete rows on MI (table) forms. The first form is the parent; MI forms come after.
+
+```python
+# Add a new row — field structure is cloned from existing rows
+option_object.add_row("200", values={
+    "200.01": "F32.1",
+    "200.02": "Major Depressive Disorder",
+})
+
+# Delete a row by RowId
+option_object.delete_row("200", row_id="some_row_id")
+```
+
 ### Error Types
 
 Raise these exceptions to control form behavior:

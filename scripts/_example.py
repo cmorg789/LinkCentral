@@ -117,6 +117,33 @@ def run(option_object: OptionObjectWrapper) -> OptionObject2015:
     # or: option_object.open_form("FORM_ID")
 
     # =========================================================================
+    # ROW OPERATIONS (Multiple Iteration Forms)
+    # =========================================================================
+    #
+    # MI forms are table-like sections where patients can have multiple rows
+    # (e.g., medication lists, diagnoses). The first form on a myAvatar form
+    # is always the parent; MI forms come after.
+    #
+    # In the OptionObject, MI rows arrive as CurrentRow (the selected row)
+    # and OtherRows (all other rows in the table).
+
+    # Add a new row to an MI form - clones field structure from existing rows
+    # option_object.add_row("200", values={
+    #     "200.01": "New diagnosis",
+    #     "200.02": "2026-01-15",
+    # })
+
+    # Add a row with no values (all fields blank)
+    # option_object.add_row("200")
+
+    # Add multiple rows
+    # for code in ["F32.1", "F41.1", "F43.10"]:
+    #     option_object.add_row("200", values={"200.01": code})
+
+    # Delete an existing row by RowId
+    # option_object.delete_row("200", "ROW_ID_HERE")
+
+    # =========================================================================
     # LOGGING / DEBUG OUTPUT
     # =========================================================================
 

@@ -184,6 +184,8 @@ class OptionObjectWrapper:
     def __init__(self, spyne_obj: OptionObject2015):
         self._obj = spyne_obj
         self._modified_fields: Set[Tuple[str, str, str]] = set()  # (form_id, row_id, field_number)
+        self._added_rows: List[Tuple[str, RowObject]] = []  # (form_id, row)
+        self._deleted_row_ids: Set[Tuple[str, str]] = set()  # (form_id, row_id)
         self._fields = FieldAccessor(self)
         # Capture initial state for diff
         self._initial_snapshot = self._capture_snapshot()
@@ -360,12 +362,128 @@ class OptionObjectWrapper:
         self._obj.ErrorCode = ErrorCodes.OPEN_FORM
         self._obj.ErrorMesg = form_id
 
+    # Row operations (for multiple iteration forms)
+    def add_row(self, form_id: str, values: Dict[str, str] = None) -> None:
+        """Add a new row to a multiple iteration form.
+
+        Clones the field structure from an existing row on the form,
+        clears the values, then applies any provided values.
+
+        Per the ScriptLink spec:
+        - ParentRowId must be the CurrentRow.RowId of the parent (first) form
+        - RowAction must be "ADD" (case-sensitive)
+        - Each new row gets a unique auto-generated RowId
+
+        Args:
+            form_id: The FormId of the MI form to add a row to
+            values: Optional dict of {field_number: value} to set on the new row
+
+        Raises:
+            ValueError: If form not found, form has no rows, or parent form not found
+        """
+        form = self._find_form(form_id)
+        if form is None:
+            raise ValueError(f"Form {form_id} not found")
+
+        # Find a row to clone field structure from
+        template_row = form.CurrentRow
+        if template_row is None or template_row.Fields is None:
+            raise ValueError(f"Form {form_id} has no rows to clone field structure from")
+
+        # ParentRowId must be the CurrentRow.RowId of the parent (first) form,
+        # not the MI form itself. The first form is always the parent.
+        parent_row_id = self._get_parent_row_id(form_id)
+
+        # Build new row with cloned field structure
+        new_row = RowObject()
+        new_row.RowId = self._generate_row_id()
+        new_row.ParentRowId = parent_row_id
+        new_row.RowAction = "ADD"
+        new_row.Fields = []
+
+        for field in template_row.Fields:
+            new_field = FieldObject()
+            new_field.FieldNumber = field.FieldNumber
+            new_field.FieldValue = (values or {}).get(field.FieldNumber, "")
+            new_field.Enabled = field.Enabled
+            new_field.Lock = field.Lock
+            new_field.Required = field.Required
+            new_row.Fields.append(new_field)
+
+        self._added_rows.append((form_id, new_row))
+
+    def delete_row(self, form_id: str, row_id: str) -> None:
+        """Mark a row for deletion on a multiple iteration form.
+
+        Args:
+            form_id: The FormId containing the row
+            row_id: The RowId to delete
+
+        Raises:
+            ValueError: If form or row not found
+        """
+        form = self._find_form(form_id)
+        if form is None:
+            raise ValueError(f"Form {form_id} not found")
+
+        # Verify the row exists
+        if form.OtherRows is not None:
+            for row in form.OtherRows:
+                if row.RowId == row_id:
+                    self._deleted_row_ids.add((form_id, row_id))
+                    return
+
+        if form.CurrentRow is not None and form.CurrentRow.RowId == row_id:
+            self._deleted_row_ids.add((form_id, row_id))
+            return
+
+        raise ValueError(f"Row {row_id} not found in form {form_id}")
+
+    def _find_form(self, form_id: str) -> Optional[FormObject]:
+        """Find a form by ID."""
+        if self._obj.Forms is None:
+            return None
+        for form in self._obj.Forms:
+            if form.FormId == form_id:
+                return form
+        return None
+
+    def _get_parent_row_id(self, mi_form_id: str) -> str:
+        """Get the ParentRowId for a new row on an MI form.
+
+        Per the ScriptLink spec, ParentRowId is the CurrentRow.RowId
+        of the primary (first) FormObject. MI forms cannot be the
+        first form.
+        """
+        if self._obj.Forms is None or len(self._obj.Forms) == 0:
+            raise ValueError("No forms available")
+
+        parent_form = self._obj.Forms[0]
+        if parent_form.FormId == mi_form_id:
+            # MI form is the first form — unusual, but fall back to its own CurrentRow
+            if parent_form.CurrentRow is not None:
+                return parent_form.CurrentRow.RowId
+            raise ValueError("Parent form has no CurrentRow")
+
+        if parent_form.CurrentRow is None:
+            raise ValueError(f"Parent form {parent_form.FormId} has no CurrentRow")
+
+        return parent_form.CurrentRow.RowId
+
+    @staticmethod
+    def _generate_row_id() -> str:
+        """Generate a unique temporary RowId for a new row."""
+        import uuid
+        return str(uuid.uuid4())
+
     def no_changes(self) -> OptionObject2015:
         """Return a response with no modifications.
 
         Discards any tracked field changes, resets error state, and returns empty forms.
         """
         self._modified_fields.clear()
+        self._added_rows.clear()
+        self._deleted_row_ids.clear()
         self._obj.ErrorCode = ErrorCodes.NONE
         self._obj.ErrorMesg = None
         return self.build_response()
@@ -395,7 +513,7 @@ class OptionObjectWrapper:
         response.SessionToken = self._obj.SessionToken
 
         # If no modifications, return empty forms
-        if not self._modified_fields:
+        if not self._modified_fields and not self._added_rows and not self._deleted_row_ids:
             response.Forms = []
             return response
 
@@ -405,11 +523,22 @@ class OptionObjectWrapper:
         if self._obj.Forms is None:
             return response
 
-        for form in self._obj.Forms:
-            # Get modifications in this form
-            form_mods = {(row_id, field_num) for (fid, row_id, field_num) in self._modified_fields if fid == form.FormId}
+        # Collect added rows and deleted row IDs per form
+        added_by_form: Dict[str, List[RowObject]] = {}
+        for form_id, row in self._added_rows:
+            added_by_form.setdefault(form_id, []).append(row)
 
-            if not form_mods:
+        deleted_by_form: Dict[str, Set[str]] = {}
+        for form_id, row_id in self._deleted_row_ids:
+            deleted_by_form.setdefault(form_id, set()).add(row_id)
+
+        for form in self._obj.Forms:
+            # Get field modifications in this form
+            form_mods = {(row_id, field_num) for (fid, row_id, field_num) in self._modified_fields if fid == form.FormId}
+            form_adds = added_by_form.get(form.FormId, [])
+            form_deletes = deleted_by_form.get(form.FormId, set())
+
+            if not form_mods and not form_adds and not form_deletes:
                 continue
 
             # Build response form
@@ -420,24 +549,34 @@ class OptionObjectWrapper:
             # Get modified row IDs
             modified_row_ids = {row_id for (row_id, _) in form_mods}
 
-            # Build CurrentRow if modified
-            if form.CurrentRow is not None and form.CurrentRow.RowId in modified_row_ids:
-                resp_form.CurrentRow = self._build_row_response(
-                    form.CurrentRow,
-                    {field_num for (row_id, field_num) in form_mods if row_id == form.CurrentRow.RowId}
-                )
+            # Build CurrentRow if modified or deleted
+            if form.CurrentRow is not None:
+                if form.CurrentRow.RowId in form_deletes:
+                    resp_form.CurrentRow = self._build_delete_row(form.CurrentRow)
+                elif form.CurrentRow.RowId in modified_row_ids:
+                    resp_form.CurrentRow = self._build_row_response(
+                        form.CurrentRow,
+                        {field_num for (row_id, field_num) in form_mods if row_id == form.CurrentRow.RowId}
+                    )
 
-            # Build OtherRows if any modified
+            # Build OtherRows: modified, deleted, and added
+            other_rows = []
             if form.OtherRows is not None:
-                other_rows = []
                 for row in form.OtherRows:
-                    if row.RowId in modified_row_ids:
+                    if row.RowId in form_deletes:
+                        other_rows.append(self._build_delete_row(row))
+                    elif row.RowId in modified_row_ids:
                         other_rows.append(self._build_row_response(
                             row,
                             {field_num for (row_id, field_num) in form_mods if row_id == row.RowId}
                         ))
-                if other_rows:
-                    resp_form.OtherRows = other_rows
+
+            # Append added rows
+            for added_row in form_adds:
+                other_rows.append(added_row)
+
+            if other_rows:
+                resp_form.OtherRows = other_rows
 
             response.Forms.append(resp_form)
 
@@ -448,7 +587,7 @@ class OptionObjectWrapper:
         resp_row = RowObject()
         resp_row.RowId = row.RowId
         resp_row.ParentRowId = row.ParentRowId
-        resp_row.RowAction = "EDIT"  # Mark as edited
+        resp_row.RowAction = row.RowAction or "EDIT"
 
         if row.Fields is not None:
             resp_row.Fields = [
@@ -456,6 +595,15 @@ class OptionObjectWrapper:
                 if f.FieldNumber in modified_field_nums
             ]
 
+        return resp_row
+
+    def _build_delete_row(self, row: RowObject) -> RowObject:
+        """Build a row marked for deletion."""
+        resp_row = RowObject()
+        resp_row.RowId = row.RowId
+        resp_row.ParentRowId = row.ParentRowId
+        resp_row.RowAction = "DELETE"
+        resp_row.Fields = []
         return resp_row
 
     def _copy_field(self, field: FieldObject) -> FieldObject:
