@@ -363,53 +363,70 @@ class OptionObjectWrapper:
         self._obj.ErrorMesg = form_id
 
     # Row operations (for multiple iteration forms)
-    def add_row(self, form_id: str, values: Dict[str, str] = None) -> None:
+    def add_row(self, form_id: str, values: Dict[str, str] = None,
+                fields: List[str] = None) -> None:
         """Add a new row to a multiple iteration form.
 
-        Clones the field structure from an existing row on the form,
-        clears the values, then applies any provided values.
+        If the form has existing rows, clones the field structure automatically.
+        If the form has no rows (empty MI table), pass `fields` to specify
+        the field numbers to include in the new row.
 
         Per the ScriptLink spec:
         - ParentRowId must be the CurrentRow.RowId of the parent (first) form
         - RowAction must be "ADD" (case-sensitive)
+        - ADD is only allowed on form load events, not pre-file
         - Each new row gets a unique auto-generated RowId
 
         Args:
             form_id: The FormId of the MI form to add a row to
             values: Optional dict of {field_number: value} to set on the new row
+            fields: Optional list of field numbers (required if MI table is empty)
 
         Raises:
-            ValueError: If form not found, form has no rows, or parent form not found
+            ValueError: If form not found, no template available, or parent form not found
         """
         form = self._find_form(form_id)
         if form is None:
             available = [f.FormId for f in (self._obj.Forms or [])]
             raise ValueError(f"Form {form_id} not found. Available forms: {available}")
 
-        # Find a row to clone field structure from
-        template_row = form.CurrentRow
-        if template_row is None or template_row.Fields is None:
-            raise ValueError(f"Form {form_id} has no rows to clone field structure from")
-
         # ParentRowId must be the CurrentRow.RowId of the parent (first) form,
         # not the MI form itself. The first form is always the parent.
         parent_row_id = self._get_parent_row_id(form_id)
 
-        # Build new row with cloned field structure
+        # Build new row
         new_row = RowObject()
-        new_row.RowId = self._generate_row_id()
+        new_row.RowId = self._generate_row_id(form)
         new_row.ParentRowId = parent_row_id
         new_row.RowAction = "ADD"
         new_row.Fields = []
 
-        for field in template_row.Fields:
-            new_field = FieldObject()
-            new_field.FieldNumber = field.FieldNumber
-            new_field.FieldValue = (values or {}).get(field.FieldNumber, "")
-            new_field.Enabled = field.Enabled
-            new_field.Lock = field.Lock
-            new_field.Required = field.Required
-            new_row.Fields.append(new_field)
+        # Try to clone field structure from an existing row
+        template_row = form.CurrentRow
+        if template_row is not None and template_row.Fields is not None:
+            for field in template_row.Fields:
+                new_field = FieldObject()
+                new_field.FieldNumber = field.FieldNumber
+                new_field.FieldValue = (values or {}).get(field.FieldNumber, "")
+                new_field.Enabled = field.Enabled
+                new_field.Lock = field.Lock
+                new_field.Required = field.Required
+                new_row.Fields.append(new_field)
+        elif fields is not None:
+            # No template row — build from explicit field list
+            for field_number in fields:
+                new_field = FieldObject()
+                new_field.FieldNumber = field_number
+                new_field.FieldValue = (values or {}).get(field_number, "")
+                new_field.Enabled = "1"
+                new_field.Lock = "0"
+                new_field.Required = "0"
+                new_row.Fields.append(new_field)
+        else:
+            raise ValueError(
+                f"Form {form_id} has no existing rows to clone field structure from. "
+                f"Pass fields=['1266.64', '1266.65', ...] to specify field numbers explicitly."
+            )
 
         self._added_rows.append((form_id, new_row))
 
@@ -472,11 +489,42 @@ class OptionObjectWrapper:
 
         return parent_form.CurrentRow.RowId
 
+    def _generate_row_id(self, form: FormObject) -> str:
+        """Generate a unique RowId for a new row.
+
+        myAvatar expects RowIds in the format '{FormId}||{number}'.
+        Finds the next available number by checking existing rows
+        and any previously added rows.
+        """
+        existing_nums = set()
+        prefix = f"{form.FormId}||"
+
+        # Collect existing row numbers
+        for row in self._iter_form_rows(form):
+            if row.RowId and row.RowId.startswith(prefix):
+                try:
+                    existing_nums.add(int(row.RowId[len(prefix):]))
+                except ValueError:
+                    pass
+
+        # Also check rows we've already added to this form
+        for added_form_id, added_row in self._added_rows:
+            if added_form_id == form.FormId and added_row.RowId and added_row.RowId.startswith(prefix):
+                try:
+                    existing_nums.add(int(added_row.RowId[len(prefix):]))
+                except ValueError:
+                    pass
+
+        next_num = max(existing_nums, default=0) + 1
+        return f"{form.FormId}||{next_num}"
+
     @staticmethod
-    def _generate_row_id() -> str:
-        """Generate a unique temporary RowId for a new row."""
-        import uuid
-        return str(uuid.uuid4())
+    def _iter_form_rows(form: FormObject):
+        """Iterate over all rows in a form (CurrentRow + OtherRows)."""
+        if form.CurrentRow is not None:
+            yield form.CurrentRow
+        if form.OtherRows is not None:
+            yield from form.OtherRows
 
     def no_changes(self) -> OptionObject2015:
         """Return a response with no modifications.
