@@ -383,7 +383,8 @@ class OptionObjectWrapper:
         """
         form = self._find_form(form_id)
         if form is None:
-            raise ValueError(f"Form {form_id} not found")
+            available = [f.FormId for f in (self._obj.Forms or [])]
+            raise ValueError(f"Form {form_id} not found. Available forms: {available}")
 
         # Find a row to clone field structure from
         template_row = form.CurrentRow
@@ -424,7 +425,8 @@ class OptionObjectWrapper:
         """
         form = self._find_form(form_id)
         if form is None:
-            raise ValueError(f"Form {form_id} not found")
+            available = [f.FormId for f in (self._obj.Forms or [])]
+            raise ValueError(f"Form {form_id} not found. Available forms: {available}")
 
         # Verify the row exists
         if form.OtherRows is not None:
