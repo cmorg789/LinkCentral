@@ -1,5 +1,6 @@
 """Database connection configuration from YAML file."""
 import logging
+import threading
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -18,6 +19,7 @@ _connections_cache: Optional[Dict[str, Dict[str, Any]]] = None
 
 # Cached SQLHelper instances
 _sql_helpers: Dict[str, SQLHelper] = {}
+_sql_helpers_lock = threading.Lock()
 
 
 def load_connections(force_reload: bool = False) -> Dict[str, Dict[str, Any]]:
@@ -117,13 +119,14 @@ def get_connection(name: str) -> SQLHelper:
         conn = get_connection("AVATAR_DB")
         results = conn.query("SELECT * FROM patients WHERE id = :id", id=123)
     """
-    if name in _sql_helpers:
-        return _sql_helpers[name]
+    with _sql_helpers_lock:
+        if name in _sql_helpers:
+            return _sql_helpers[name]
 
-    config = get_connection_config(name)
-    logger.info("Creating new connection: %s (%s://%s:%s/%s)",
-                name, config.get("driver"), config.get("host"),
-                config.get("port"), config.get("database"))
-    helper = SQLHelper(config)
-    _sql_helpers[name] = helper
-    return helper
+        config = get_connection_config(name)
+        logger.info("Creating new connection: %s (%s://%s:%s/%s)",
+                    name, config.get("driver"), config.get("host"),
+                    config.get("port"), config.get("database"))
+        helper = SQLHelper(config)
+        _sql_helpers[name] = helper
+        return helper

@@ -96,7 +96,7 @@ class ScriptLinkService(Service):
         with get_session() as db:
             # Create wrapper for Pythonic access
             wrapper = OptionObjectWrapper(optionObject)
-            input_json = json.dumps(wrapper.to_dict())
+            input_json = json.dumps(wrapper.to_dict()) if settings.log_request_body else None
 
             try:
                 # Find script handler
@@ -137,12 +137,15 @@ class ScriptLinkService(Service):
                     finally:
                         _thread_local.capture_buffer = None
 
-                with ThreadPoolExecutor(max_workers=1) as executor:
-                    future = executor.submit(run_script)
-                    try:
-                        result, script_output = future.result(timeout=settings.script_timeout)
-                    except FuturesTimeoutError:
-                        raise TimeoutError(f"Script timed out after {settings.script_timeout}s")
+                executor = ThreadPoolExecutor(max_workers=1)
+                future = executor.submit(run_script)
+                try:
+                    result, script_output = future.result(timeout=settings.script_timeout)
+                except FuturesTimeoutError:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    raise TimeoutError(f"Script timed out after {settings.script_timeout}s")
+                finally:
+                    executor.shutdown(wait=False)
 
                 # Log any print output from the script
                 if script_output:
@@ -161,7 +164,7 @@ class ScriptLinkService(Service):
                 log_entry = RequestLog(
                     parameter=parameter,
                     option_object=input_json,
-                    response_object=_option_object_to_json(result),
+                    response_object=_option_object_to_json(result) if settings.log_request_body else None,
                     execution_context=json.dumps({"diff": diff, "output": script_output}) if (diff or script_output) else None,
                     status="success" if result.ErrorCode == ErrorCodes.NONE else "error",
                     error_message=result.ErrorMesg if result.ErrorCode != ErrorCodes.NONE else None,
@@ -185,7 +188,7 @@ class ScriptLinkService(Service):
                 log_entry = RequestLog(
                     parameter=parameter,
                     option_object=input_json,
-                    response_object=_option_object_to_json(result),
+                    response_object=_option_object_to_json(result) if settings.log_request_body else None,
                     status=type(e).__name__.lower().replace("error", ""),
                     error_message=str(e),
                     execution_time_ms=execution_time_ms,

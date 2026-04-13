@@ -147,7 +147,8 @@ class FieldAccessor:
         result = self._find_field(field_number)
         if result is None:
             return default
-        return result[0].FieldValue or default
+        val = result[0].FieldValue
+        return val if val is not None else default
 
     def __contains__(self, field_number: str) -> bool:
         """Check if a field exists."""
@@ -362,9 +363,11 @@ class OptionObjectWrapper:
     def no_changes(self) -> OptionObject2015:
         """Return a response with no modifications.
 
-        Discards any tracked field changes and returns empty forms.
+        Discards any tracked field changes, resets error state, and returns empty forms.
         """
         self._modified_fields.clear()
+        self._obj.ErrorCode = ErrorCodes.NONE
+        self._obj.ErrorMesg = None
         return self.build_response()
 
     # Response building
