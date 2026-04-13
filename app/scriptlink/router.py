@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import logging
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -14,6 +15,9 @@ logger = logging.getLogger(__name__)
 
 # Type alias for script handler function
 ScriptHandler = Callable[["OptionObjectWrapper"], None]
+
+# Allow alphanumerics, underscores, hyphens, spaces, and dots (for field-style names)
+_SAFE_PARAMETER = re.compile(r'^[A-Za-z0-9_\- .]+$')
 
 
 class ScriptRouter:
@@ -56,7 +60,15 @@ class ScriptRouter:
         Returns:
             The script's run() function or None if not found
         """
+        if not _SAFE_PARAMETER.match(parameter):
+            logger.warning("Rejected invalid parameter name: %r", parameter)
+            return None
+
         script_path = self.scripts_dir / f"{parameter}.py"
+
+        if not script_path.resolve().is_relative_to(self.scripts_dir.resolve()):
+            logger.warning("Rejected path traversal in parameter: %r", parameter)
+            return None
 
         if not script_path.exists():
             return None
@@ -97,7 +109,7 @@ class ScriptRouter:
 
         raise RuntimeError(f"Script {path} has no 'run' function")
 
-    def save_missing_script_data(self, parameter: str, option_object_dict: dict) -> Path:
+    def save_missing_script_data(self, parameter: str, option_object_dict: dict) -> Optional[Path]:
         """Save OptionObject data for developing a missing script.
 
         When a parameter is called but no script exists, this saves the
@@ -108,8 +120,12 @@ class ScriptRouter:
             option_object_dict: The OptionObject as a dictionary
 
         Returns:
-            Path to the saved file
+            Path to the saved file, or None if parameter name is invalid
         """
+        if not _SAFE_PARAMETER.match(parameter):
+            logger.warning("Rejected invalid parameter name for fixture save: %r", parameter)
+            return None
+
         self.missing_scripts_dir.mkdir(parents=True, exist_ok=True)
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")

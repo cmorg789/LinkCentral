@@ -166,3 +166,6 @@ cython_debug/
 CLAUDE.md
 .claude/
 design.md
+
+# Connection credentials (use connections.example.yaml as template)
+config/connections.yaml
