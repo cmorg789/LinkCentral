@@ -118,9 +118,17 @@ facility = option_object.facility
 
 Add or delete rows on MI (table) forms. The first form is the parent; MI forms come after.
 
+**Important:** `ADD` RowAction is only allowed on **form load** events. myAvatar does not send the MI form when the table is empty -- your script must create the `FormObject` if needed.
+
 ```python
 # Add a new row — field structure is cloned from existing rows
 option_object.add_row("200", values={
+    "200.01": "F32.1",
+    "200.02": "Major Depressive Disorder",
+})
+
+# Add a row with explicit field list (when MI table is empty / no template row)
+option_object.add_row("200", fields=["200.01", "200.02"], values={
     "200.01": "F32.1",
     "200.02": "Major Depressive Disorder",
 })

@@ -126,12 +126,35 @@ def run(option_object: OptionObjectWrapper) -> OptionObject2015:
     #
     # In the OptionObject, MI rows arrive as CurrentRow (the selected row)
     # and OtherRows (all other rows in the table).
+    #
+    # Important myAvatar behaviors:
+    #   - ADD RowAction is only allowed on FORM LOAD events (not pre-file
+    #     or field-change events)
+    #   - myAvatar does NOT send the MI form when the table is empty --
+    #     your script must create the FormObject manually if needed
+    #   - RowIds use the format {FormId}||{number} (e.g., "200||1")
+    #   - Parent form required fields must be set before MI table data
 
     # Add a new row to an MI form - clones field structure from existing rows
     # option_object.add_row("200", values={
     #     "200.01": "New diagnosis",
     #     "200.02": "2026-01-15",
     # })
+
+    # Add a row with explicit field list (required when MI table is empty)
+    # option_object.add_row("200", fields=["200.01", "200.02"], values={
+    #     "200.01": "New diagnosis",
+    #     "200.02": "2026-01-15",
+    # })
+
+    # If MI form is missing (empty table), create it first:
+    # from app.soap.types import FormObject
+    # mi_form = FormObject()
+    # mi_form.FormId = "200"
+    # mi_form.MultipleIteration = True
+    # mi_form.CurrentRow = None
+    # mi_form.OtherRows = []
+    # option_object._obj.Forms.append(mi_form)
 
     # Add a row with no values (all fields blank)
     # option_object.add_row("200")
