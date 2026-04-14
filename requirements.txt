@@ -1,6 +1,6 @@
 fastapi>=0.109.0
 uvicorn[standard]>=0.27.0
-spyne @ git+https://github.com/arskom/spyne.git
+spyne @ git+https://github.com/arskom/spyne.git@af96bf95feb7950617640671f8aba9654f31acd3
 lxml>=5.0.0
 sqlalchemy>=2.0.0
 pydantic>=2.0.0

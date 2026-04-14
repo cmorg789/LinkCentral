@@ -20,7 +20,7 @@ from app import __version__
 from app.config import settings
 from app.db import get_session, RequestLog
 from app.soap.types import OptionObject2015, ErrorCodes, TNS
-from app.scriptlink import ScriptRouter, OptionObjectWrapper, ScriptLinkError
+from app.scriptlink import ScriptRouter, OptionObjectWrapper, ScriptLinkError, AlertError
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +60,28 @@ SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
 _router = ScriptRouter(SCRIPTS_DIR, DATA_DIR)
 
+# Shared executor for script execution.
+# Concurrency model:
+#   * `_script_executor` bounds *running* scripts to script_max_concurrency.
+#   * `_script_admission` bounds *total in-flight* (running + queued) to
+#     script_max_concurrency + script_max_queued. This matters because
+#     ThreadPoolExecutor's internal queue is unbounded — without a gate,
+#     saturated workers would still let new tasks pile up in memory and
+#     potentially execute long after the caller timed out.
+#   * On caller timeout we call future.cancel(): if the task hasn't started
+#     yet it's dropped from the queue so stale work doesn't run later.
+# NOTE: Python threads cannot be forcibly killed, so a running script that
+# exceeds the timeout keeps executing in the background until it returns.
+# True termination would require a process pool (heavier; needs pickleable
+# OptionObject).
+_script_executor = ThreadPoolExecutor(
+    max_workers=settings.script_max_concurrency,
+    thread_name_prefix="scriptlink",
+)
+_script_admission = threading.BoundedSemaphore(
+    settings.script_max_concurrency + settings.script_max_queued
+)
+
 # Log cleanup state
 _last_cleanup_time: Optional[datetime] = None
 
@@ -92,6 +114,7 @@ class ScriptLinkService(Service):
             Modified OptionObject2015
         """
         start_time = time.time()
+        source_ip = getattr(_thread_local, "source_ip", None)
 
         with get_session() as db:
             # Create wrapper for Pythonic access
@@ -117,6 +140,7 @@ class ScriptLinkService(Service):
                         status="no_script",
                         error_message=f"Script not configured: {parameter}",
                         execution_time_ms=execution_time_ms,
+                        source_ip=source_ip,
                     )
                     db.add(log_entry)
                     db.commit()
@@ -137,15 +161,34 @@ class ScriptLinkService(Service):
                     finally:
                         _thread_local.capture_buffer = None
 
-                executor = ThreadPoolExecutor(max_workers=1)
-                future = executor.submit(run_script)
+                # Gate admission so queue depth stays bounded even under load.
+                if not _script_admission.acquire(blocking=False):
+                    logger.warning(
+                        "Script %r rejected: admission queue full (max_concurrency=%d, max_queued=%d)",
+                        parameter, settings.script_max_concurrency, settings.script_max_queued,
+                    )
+                    raise AlertError(
+                        "LinkCentral is temporarily overloaded. Please retry in a moment."
+                    )
+
+                future = _script_executor.submit(run_script)
+                # Release the admission slot whenever the task finishes for any
+                # reason — completed, errored, or cancelled while queued.
+                future.add_done_callback(lambda _f: _script_admission.release())
+
                 try:
                     result, script_output = future.result(timeout=settings.script_timeout)
                 except FuturesTimeoutError:
-                    executor.shutdown(wait=False, cancel_futures=True)
+                    # Try to drop the task if it hasn't started yet; if it has
+                    # started, the thread keeps running until it returns.
+                    cancelled = future.cancel()
+                    logger.warning(
+                        "Script %r timed out after %ss (%s)",
+                        parameter,
+                        settings.script_timeout,
+                        "queued task dropped" if cancelled else "thread will continue until it returns",
+                    )
                     raise TimeoutError(f"Script timed out after {settings.script_timeout}s")
-                finally:
-                    executor.shutdown(wait=False)
 
                 # Log any print output from the script
                 if script_output:
@@ -169,6 +212,7 @@ class ScriptLinkService(Service):
                     status="success" if result.ErrorCode == ErrorCodes.NONE else "error",
                     error_message=result.ErrorMesg if result.ErrorCode != ErrorCodes.NONE else None,
                     execution_time_ms=execution_time_ms,
+                    source_ip=source_ip,
                 )
                 db.add(log_entry)
                 db.commit()
@@ -192,6 +236,7 @@ class ScriptLinkService(Service):
                     status=type(e).__name__.lower().replace("error", ""),
                     error_message=str(e),
                     execution_time_ms=execution_time_ms,
+                    source_ip=source_ip,
                 )
                 db.add(log_entry)
                 db.commit()
@@ -211,6 +256,7 @@ class ScriptLinkService(Service):
                     status="error",
                     error_message=str(e),
                     execution_time_ms=execution_time_ms,
+                    source_ip=source_ip,
                 )
                 db.add(log_entry)
                 db.commit()
@@ -366,6 +412,18 @@ class _ProxyAwareWsgiApplication(WsgiApplication):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._wsdl_url = None
+
+    def __call__(self, req_env, start_response):
+        # Stash the client IP in thread-local so RunScript can log it.
+        # Prefer X-Forwarded-For (first hop) when present, fall back to REMOTE_ADDR.
+        forwarded = req_env.get("HTTP_X_FORWARDED_FOR", "")
+        _thread_local.source_ip = (
+            forwarded.split(",")[0].strip() if forwarded else req_env.get("REMOTE_ADDR")
+        )
+        try:
+            return super().__call__(req_env, start_response)
+        finally:
+            _thread_local.source_ip = None
 
     def handle_wsdl_request(self, req_env, start_response, url):
         if self._wsdl_url is not None and self._wsdl_url != url:

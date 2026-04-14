@@ -213,7 +213,9 @@ connections:
 | `PORT` | `8000` | Server port |
 | `SOAP_PATH` | `/ScriptLinkService.asmx` | SOAP endpoint path |
 | `DATABASE_URL` | `sqlite:///data/scriptlink.db` | Request log database |
-| `SCRIPT_TIMEOUT` | `30` | Script timeout in seconds |
+| `SCRIPT_TIMEOUT` | `30` | Script timeout in seconds (timed-out thread keeps running until it returns) |
+| `SCRIPT_MAX_CONCURRENCY` | `16` | Max concurrently running scripts |
+| `SCRIPT_MAX_QUEUED` | `32` | Max requests waiting for a worker; excess requests are rejected with an ALERT |
 | `SCRIPT_ERROR_BLOCKING` | `False` | Unhandled errors block form |
 | `CLEANUP_INTERVAL_MINUTES` | `0` | How often to prune old request logs (0 = disabled) |
 | `CLEANUP_RETENTION_DAYS` | `30` | Delete logs older than this many days |

@@ -47,6 +47,7 @@ class ScriptRouter:
         self.scripts_dir = scripts_dir
         self.data_dir = data_dir
         self.missing_scripts_dir = data_dir / "missing_scripts"
+        self.max_fixtures_per_parameter = 3
 
     def get_handler(self, parameter: str) -> Optional[ScriptHandler]:
         """Get the handler function for a parameter.
@@ -136,7 +137,22 @@ class ScriptRouter:
             json.dump(option_object_dict, f, indent=2)
 
         logger.info(f"Saved missing script data: {path}")
+        self._rotate_fixtures(parameter)
         return path
+
+    def _rotate_fixtures(self, parameter: str) -> None:
+        """Keep only the most recent fixtures for a parameter.
+
+        Prevents unbounded disk growth when an unknown parameter is called
+        repeatedly. Timestamps are in the filename, so lexicographic sort
+        matches chronological order.
+        """
+        existing = sorted(self.missing_scripts_dir.glob(f"{parameter}_*.json"))
+        for stale in existing[:-self.max_fixtures_per_parameter]:
+            try:
+                stale.unlink()
+            except OSError:
+                logger.warning("Failed to remove stale fixture: %s", stale, exc_info=True)
 
     def list_scripts(self) -> list[str]:
         """List all available script parameters.

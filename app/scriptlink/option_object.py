@@ -299,10 +299,14 @@ class OptionObjectWrapper:
     def get_diff(self) -> Dict[str, Any]:
         """Get differences between initial and current state.
 
+        Field diff keys are composite: "{form_id}|{row_id}|{field_number}".
+        This avoids collapsing entries across forms or across rows in
+        multiple-iteration forms where field numbers repeat.
+
         Returns:
             Dict with field changes and row operations:
             {
-                "123.45": {
+                "100|100||0|123.45": {
                     "value": {"old": "foo", "new": "bar"},
                     "required": {"old": "0", "new": "1"}
                 },
@@ -329,9 +333,8 @@ class OptionObjectWrapper:
                     field_changes[prop] = {"old": old_val, "new": new_val}
 
             if field_changes:
-                # Use field_number as the display key
-                field_number = key[2]
-                diff[field_number] = field_changes
+                form_id, row_id, field_number = key
+                diff[f"{form_id}|{row_id}|{field_number}"] = field_changes
 
         # Include row operations
         if self._added_rows:

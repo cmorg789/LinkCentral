@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     service_name: str = "LinkCentral"
     debug: bool = False  # Enables auto-reload
     script_timeout: int = 30  # Max seconds for script execution
+    script_max_concurrency: int = 16  # Max concurrent running scripts
+    script_max_queued: int = 32  # Max requests waiting for a worker before rejecting with ALERT
     script_error_blocking: bool = False # Should script errors block form?
 
     # Logging
