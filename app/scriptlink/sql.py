@@ -144,6 +144,16 @@ class SQLHelper:
             max_overflow=10,
         )
 
+    def ping(self) -> None:
+        """Verify the database is reachable by issuing a trivial query.
+
+        Raises whatever SQLAlchemy/DBAPI error occurs if the connection
+        cannot be established or the query fails. `pool_pre_ping` means a
+        stale pooled connection is transparently replaced before the probe.
+        """
+        with self._engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+
     def query(self, sql: str, max_rows: int = 10000, **params) -> List[Dict[str, Any]]:
         """Execute a SELECT query and return results as list of dicts.
 

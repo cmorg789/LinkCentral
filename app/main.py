@@ -3,12 +3,15 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from a2wsgi import WSGIMiddleware
+from starlette.concurrency import run_in_threadpool
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app import __version__
 from app.config import settings
 from app.db import init_db
+from app.health import run_health_checks
 from app.soap.service import wsgi_application as soap_wsgi
 
 logging.basicConfig(level=logging.DEBUG if settings.debug else logging.INFO)
@@ -84,8 +87,17 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy", "version": __version__}
+    """Health check endpoint.
+
+    Runs dependency checks (request-log DB, configured connections, script
+    pool saturation) and returns the rolled-up status. Responds with HTTP 503
+    only when a core dependency is unhealthy; a merely degraded service (e.g.
+    an external DB down or the script queue full) still returns 200 so it
+    stays in load-balancer rotation.
+    """
+    report = await run_in_threadpool(run_health_checks)
+    status_code = 503 if report["status"] == "unhealthy" else 200
+    return JSONResponse(content=report, status_code=status_code)
 
 
 def main():

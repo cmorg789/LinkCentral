@@ -86,6 +86,29 @@ _script_admission = threading.BoundedSemaphore(
 _last_cleanup_time: Optional[datetime] = None
 
 
+def get_script_pool_stats() -> dict:
+    """Snapshot of script executor saturation for health reporting.
+
+    Derived from the admission semaphore, which gates total in-flight work
+    (running + queued) at ``max_concurrency + max_queued``. Reading the
+    semaphore's free-permit count is an atomic snapshot; it may be momentarily
+    stale under concurrency but is accurate enough for a health probe.
+    """
+    capacity = settings.script_max_concurrency + settings.script_max_queued
+    # BoundedSemaphore._value is the number of free admission slots.
+    available = _script_admission._value
+    in_flight = capacity - available
+    running = min(in_flight, settings.script_max_concurrency)
+    queued = max(0, in_flight - settings.script_max_concurrency)
+    return {
+        "running": running,
+        "queued": queued,
+        "max_concurrency": settings.script_max_concurrency,
+        "max_queued": settings.script_max_queued,
+        "queue_full": available == 0,
+    }
+
+
 class ScriptLinkService(Service):
     """SOAP service implementing the ScriptLink interface."""
 

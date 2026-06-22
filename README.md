@@ -43,7 +43,7 @@ python -m app.main
 |----------|-------------|
 | `{SOAP_PATH}` | SOAP service |
 | `{SOAP_PATH}?wsdl` | WSDL definition |
-| `/health` | Health check |
+| `/health` | Health check (200 healthy/degraded, 503 unhealthy) |
 
 `SOAP_PATH` defaults to `/ScriptLinkService.asmx` and can be changed in `.env`.
 

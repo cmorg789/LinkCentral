@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     # Logging
     log_request_body: bool = False  # Log full request/response bodies in request_log
 
+    # Health checks
+    health_check_connections: bool = True  # Ping configured DB connections in /health
+    health_connection_timeout: float = 3.0  # Per-connection ping timeout (seconds)
+
     # Database
     database_url: str = "sqlite:///data/scriptlink.db"
 
