@@ -90,10 +90,34 @@ class FieldAccessor:
         value = fields["123.45"]         # Get FieldWrapper
         fields["123.45"] = "new value"   # Set value directly
         value = fields.get("123.45", "") # Get with default
+        for key, field in fields.items():
+            form_id, row_id, field_number = key
+            print(form_id, row_id, field_number, field.value)
     """
 
     def __init__(self, wrapper: "OptionObjectWrapper"):
         self._wrapper = wrapper
+
+    def _iter_field_entries(self) -> Iterator[Tuple[Tuple[str, str, str], FieldObject]]:
+        """Yield ((form_id, row_id, field_number), field_obj) in stable order."""
+        obj = self._wrapper._obj
+        if obj.Forms is None:
+            return
+
+        for form in obj.Forms:
+            form_id = form.FormId
+            if form.CurrentRow is not None and form.CurrentRow.Fields is not None:
+                row_id = form.CurrentRow.RowId
+                for field_obj in form.CurrentRow.Fields:
+                    yield ((form_id, row_id, field_obj.FieldNumber), field_obj)
+
+            if form.OtherRows is not None:
+                for row in form.OtherRows:
+                    if row.Fields is None:
+                        continue
+                    row_id = row.RowId
+                    for field_obj in row.Fields:
+                        yield ((form_id, row_id, field_obj.FieldNumber), field_obj)
 
     def _find_field(self, field_number: str) -> Optional[Tuple[FieldObject, str, str]]:
         """Find a field and return (field_obj, form_id, row_id) or None."""
@@ -153,6 +177,34 @@ class FieldAccessor:
     def __contains__(self, field_number: str) -> bool:
         """Check if a field exists."""
         return self._find_field(field_number) is not None
+
+    def __iter__(self) -> Iterator[FieldWrapper]:
+        """Iterate all field instances as FieldWrapper objects.
+
+        Fields are yielded in stable order: forms order, CurrentRow first,
+        then OtherRows, preserving source field order.
+        """
+        for (form_id, row_id, _), field_obj in self._iter_field_entries():
+            yield FieldWrapper(field_obj, form_id, row_id, self._wrapper)
+
+    def values(self) -> Iterator[FieldWrapper]:
+        """Iterate all field instances as FieldWrapper objects."""
+        return iter(self)
+
+    def keys(self) -> Iterator[Tuple[str, str, str]]:
+        """Iterate all field keys as (form_id, row_id, field_number)."""
+        for key, _ in self._iter_field_entries():
+            yield key
+
+    def items(self) -> Iterator[Tuple[Tuple[str, str, str], FieldWrapper]]:
+        """Iterate key/wrapper pairs with composite tuple keys."""
+        for (form_id, row_id, field_number), field_obj in self._iter_field_entries():
+            key = (form_id, row_id, field_number)
+            yield (key, FieldWrapper(field_obj, form_id, row_id, self._wrapper))
+
+    def __len__(self) -> int:
+        """Return total number of field instances."""
+        return sum(1 for _ in self._iter_field_entries())
 
 
 class RowWrapper:

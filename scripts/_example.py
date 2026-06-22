@@ -53,6 +53,12 @@ def run(option_object: OptionObjectWrapper) -> OptionObject2015:
     option_object.fields["123.45"].enabled = False
     option_object.fields["123.45"].locked = True
 
+    # Iterate all field instances (across all forms/rows)
+    # key format: (form_id, row_id, field_number)
+    for (form_id, row_id, field_number), field in option_object.fields.items():
+        if field_number == "123.45":
+            print(f"Found {field_number} at {form_id}/{row_id}: {field.value}")
+
     # =========================================================================
     # METADATA ACCESS
     # =========================================================================
