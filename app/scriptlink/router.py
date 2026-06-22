@@ -92,9 +92,14 @@ class ScriptRouter:
         # Create a unique module name to avoid conflicts
         module_name = f"scripts.{parameter}"
 
-        # Remove from cache if exists (for hot reload)
-        if module_name in sys.modules:
-            del sys.modules[module_name]
+        # Evict the entry script and any helper modules under the scripts
+        # package so live edits to shared helpers are picked up too, not just
+        # the entry script. Build the list first to avoid mutating while iterating.
+        for cached in [
+            name for name in sys.modules
+            if name == "scripts" or name.startswith("scripts.")
+        ]:
+            del sys.modules[cached]
 
         spec = importlib.util.spec_from_file_location(module_name, path)
         if spec is None or spec.loader is None:
